@@ -70,19 +70,47 @@ class ApiService {
 		}
 	}
 
-	/// Obtiene el historial de ventas de un cliente
+	/// Obtiene el historial de ventas de un cliente (API paginada: { total, page, limit, data })
 	Future<List<Map<String, dynamic>>> getVentasByClienteId(int clienteId) async {
 		final token = await getToken();
 		if (token == null) throw Exception('No autenticado');
-		final response = await http.get(
-			Uri.parse('$baseUrl/Ventas?clienteId=$clienteId'),
-			headers: _headers(token: token),
-		);
-		if (response.statusCode == 200) {
-			final List<dynamic> data = jsonDecode(response.body);
-			return data.cast<Map<String, dynamic>>();
+
+		final all = <Map<String, dynamic>>[];
+		var page = 1;
+		const limit = 100;
+		var total = 0;
+
+		while (page <= 50) {
+			final uri = Uri.parse(
+				'$baseUrl/Ventas?clienteId=$clienteId&page=$page&limit=$limit',
+			);
+			final response = await http.get(uri, headers: _headers(token: token));
+			if (response.statusCode != 200) {
+				throw Exception('Error al obtener historial: ${response.statusCode}');
+			}
+			final decoded = jsonDecode(response.body);
+			final batch = _extractListFromResponse(decoded);
+			if (page == 1 && decoded is Map<String, dynamic>) {
+				total = (decoded['total'] as num?)?.toInt() ?? batch.length;
+			}
+			all.addAll(batch);
+			if (batch.isEmpty || all.length >= total) break;
+			page++;
 		}
-		throw Exception('Error al obtener historial: ${response.statusCode}');
+		return all;
+	}
+
+	List<Map<String, dynamic>> _extractListFromResponse(dynamic decoded) {
+		if (decoded is List) {
+			return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+		}
+		if (decoded is Map<String, dynamic>) {
+			final list = decoded['data'];
+			if (list is List) {
+				return list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+			}
+		}
+		return [];
 	}
 
 	Future<Map<String, dynamic>> login(String email, String password) async {
