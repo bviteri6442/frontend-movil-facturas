@@ -1,10 +1,26 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 
 class ApiService {
 	static String get baseUrl => ApiConfig.baseUrl;
+
+	Map<String, String> _headers({String? token}) {
+		final headers = <String, String>{
+			'Content-Type': 'application/json',
+			'Accept': 'application/json',
+		};
+		if (token != null && token.isNotEmpty) {
+			headers['Authorization'] = 'Bearer $token';
+		}
+		// En Flutter Web este header puede provocar preflight/CORS con ngrok.
+		if (ApiConfig.skipNgrokWarning && !kIsWeb) {
+			headers['ngrok-skip-browser-warning'] = 'true';
+		}
+		return headers;
+	}
 
 	Future<Map<String, dynamic>> getProductosPaginados({int page = 1, int limit = 30, String? search}) async {
 		final prefs = await SharedPreferences.getInstance();
@@ -19,10 +35,7 @@ class ApiService {
 		final url = Uri.parse(urlStr);
 		final response = await http.get(
 			url,
-			headers: {
-				'Content-Type': 'application/json',
-				'Authorization': 'Bearer $token',
-			},
+			headers: _headers(token: token),
 		);
 		if (response.statusCode == 200) {
 			final data = jsonDecode(response.body);
@@ -49,10 +62,7 @@ class ApiService {
 		});
 		final response = await http.post(
 			url,
-			headers: {
-				'Content-Type': 'application/json',
-				'Authorization': 'Bearer $token',
-			},
+			headers: _headers(token: token),
 			body: body,
 		);
 		if (response.statusCode != 200 && response.statusCode != 201) {
@@ -66,7 +76,7 @@ class ApiService {
 		if (token == null) throw Exception('No autenticado');
 		final response = await http.get(
 			Uri.parse('$baseUrl/Ventas?clienteId=$clienteId'),
-			headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+			headers: _headers(token: token),
 		);
 		if (response.statusCode == 200) {
 			final List<dynamic> data = jsonDecode(response.body);
@@ -76,14 +86,13 @@ class ApiService {
 	}
 
 	Future<Map<String, dynamic>> login(String email, String password) async {
-		final url = Uri.parse('$baseUrl/Auth/login');
-		final response = await http.post(
-			url,
-			headers: {'Content-Type': 'application/json'},
-			body: jsonEncode({'email': email, 'contrasena': password}),
-		);
-
 		try {
+			final url = Uri.parse('$baseUrl/Auth/login');
+			final response = await http.post(
+				url,
+				headers: _headers(),
+				body: jsonEncode({'email': email, 'contrasena': password}),
+			);
 			final data = jsonDecode(response.body);
 			if (response.statusCode == 200 && data['exitoso'] == true) {
 				// Guarda el token JWT
@@ -104,7 +113,16 @@ class ApiService {
 				return {'success': false, 'message': data['mensaje'] ?? 'Error de autenticación'};
 			}
 		} catch (e) {
-			return {'success': false, 'message': 'Respuesta inválida del servidor.'};
+			final msg = e.toString();
+			if (kIsWeb && (msg.contains('Failed to fetch') || msg.contains('CORS'))) {
+				return {
+					'success': false,
+					'message':
+						'Bloqueo CORS en navegador (ngrok + Flutter Web). '
+						'Prueba en Windows/Android o usa backend en Railway.'
+				};
+			}
+			return {'success': false, 'message': 'No se pudo conectar con el servidor.'};
 		}
 	}
 
@@ -124,7 +142,7 @@ class ApiService {
 		if (token == null) throw Exception('No autenticado');
 		final response = await http.get(
 			Uri.parse('$baseUrl/Usuarios/$id'),
-			headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+			headers: _headers(token: token),
 		);
 		if (response.statusCode == 200) return jsonDecode(response.body);
 		throw Exception('Error al obtener usuario: ${response.statusCode}');
@@ -136,7 +154,7 @@ class ApiService {
 		if (token == null) throw Exception('No autenticado');
 		final response = await http.get(
 			Uri.parse('$baseUrl/Clientes/by-user/$userId'),
-			headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+			headers: _headers(token: token),
 		);
 		if (response.statusCode == 200) return jsonDecode(response.body);
 		if (response.statusCode == 404) return {}; // Usuario sin registro de cliente
@@ -149,7 +167,7 @@ class ApiService {
 		if (token == null) throw Exception('No autenticado');
 		final response = await http.post(
 			Uri.parse('$baseUrl/Clientes/$clienteId/agregar-saldo'),
-			headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+			headers: _headers(token: token),
 			body: jsonEncode({'monto': monto}),
 		);
 		if (response.statusCode == 200) return jsonDecode(response.body);
@@ -164,7 +182,7 @@ class ApiService {
 		if (token == null) throw Exception('No autenticado');
 		final response = await http.put(
 			Uri.parse('$baseUrl/Usuarios/$id'),
-			headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+			headers: _headers(token: token),
 			body: jsonEncode(datos),
 		);
 		Map<String, dynamic> data = {};
@@ -179,7 +197,7 @@ class ApiService {
 		if (token == null) throw Exception('No autenticado');
 		final response = await http.put(
 			Uri.parse('$baseUrl/Clientes/$id/mi-perfil'),
-			headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+			headers: _headers(token: token),
 			body: jsonEncode(datos),
 		);
 		Map<String, dynamic> data = {};
@@ -198,7 +216,7 @@ class ApiService {
 		if (token == null) throw Exception('No autenticado');
 		final response = await http.post(
 			Uri.parse('$baseUrl/Auth/cambiar-contrasena'),
-			headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+			headers: _headers(token: token),
 			body: jsonEncode({
 				'usuarioId': usuarioId,
 				'contrasenaActual': contrasenaActual,
@@ -224,7 +242,7 @@ class ApiService {
 		final url = Uri.parse('$baseUrl/Auth/registro-hibrido');
 		final response = await http.post(
 			url,
-			headers: {'Content-Type': 'application/json'},
+			headers: _headers(),
 			body: jsonEncode({
 				'nombreUsuario': nombreUsuario,
 				'nombre': nombre,
@@ -273,7 +291,7 @@ class ApiService {
 		if (token == null) throw Exception('No autenticado');
 		final response = await http.patch(
 			Uri.parse('$baseUrl/Usuarios/$usuarioId/imagen'),
-			headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+			headers: _headers(token: token),
 			body: jsonEncode({'imagenUrl': imagenUrl}),
 		);
 		if (response.statusCode != 200 && response.statusCode != 204) {

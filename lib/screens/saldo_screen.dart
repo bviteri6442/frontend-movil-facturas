@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 
 class SaldoScreen extends StatefulWidget {
   final User user;
@@ -92,7 +93,7 @@ class _SaldoScreenState extends State<SaldoScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mi Saldo'),
-        backgroundColor: Colors.black87,
+        backgroundColor: AppColors.primaryDark,
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -109,7 +110,7 @@ class _SaldoScreenState extends State<SaldoScreen> {
                       Card(
                         elevation: 4,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        color: Colors.black87,
+                        color: AppColors.primaryDark,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
                           child: Column(
@@ -163,7 +164,7 @@ class _SaldoScreenState extends State<SaldoScreen> {
                             : const Icon(Icons.add),
                         label: Text(_guardando ? 'Procesando...' : 'Agregar saldo'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.black87,
+                          backgroundColor: AppColors.primary,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

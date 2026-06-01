@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 
 class ProfileScreen extends StatefulWidget {
   final User user;
@@ -200,7 +201,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mi Perfil'),
-        backgroundColor: Colors.black87,
+        backgroundColor: AppColors.primaryDark,
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
@@ -242,17 +243,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               _isUploadingImage
                                   ? const CircleAvatar(
                                       radius: 50,
-                                      backgroundColor: Colors.deepPurple,
+                                      backgroundColor: AppColors.primaryDark,
                                       child: CircularProgressIndicator(color: Colors.white),
                                     )
                                   : CircleAvatar(
                                       radius: 50,
-                                      backgroundColor: Colors.deepPurple.shade100,
+                                      backgroundColor: const Color(0xFFE3F2DE),
                                       backgroundImage: (_imagenUrl != null && _imagenUrl!.isNotEmpty)
                                           ? NetworkImage(_imagenUrl!)
                                           : null,
                                       child: (_imagenUrl == null || _imagenUrl!.isEmpty)
-                                          ? const Icon(Icons.person, size: 60, color: Colors.deepPurple)
+                                          ? const Icon(Icons.person, size: 60, color: AppColors.primaryDark)
                                           : null,
                                     ),
                               if (_isEditing && !_isUploadingImage)
@@ -262,7 +263,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                     onTap: _pickAndUploadImage,
                                     child: const CircleAvatar(
                                       radius: 16,
-                                      backgroundColor: Colors.deepPurple,
+                                      backgroundColor: AppColors.primaryDark,
                                       child: Icon(Icons.camera_alt, size: 16, color: Colors.white),
                                     ),
                                   ),
@@ -273,7 +274,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 8),
                         if (_isEditing)
                           Center(
-                            child: Text('Modo edición activo', style: TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold)),
+                            child: Text('Modo edición activo', style: TextStyle(color: AppColors.primaryDark, fontWeight: FontWeight.bold)),
                           ),
                         const SizedBox(height: 20),
 
@@ -387,7 +388,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               icon: _isSaving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.save),
                               label: Text(_isSaving ? 'Guardando...' : 'Guardar cambios'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.deepPurple,
+                                backgroundColor: AppColors.primaryDark,
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                               ),
                               onPressed: _isSaving ? null : _saveProfile,
@@ -437,7 +438,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               icon: _isSaving ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Icon(Icons.lock_reset),
                               label: Text(_isSaving ? 'Actualizando...' : 'Cambiar contraseña'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.deepPurple,
+                                backgroundColor: AppColors.primaryDark,
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                               ),
                               onPressed: _isSaving ? null : _changePassword,
@@ -474,7 +475,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
-          prefixIcon: Icon(icon, color: isLocked ? Colors.grey : Colors.black87),
+          prefixIcon: Icon(icon, color: isLocked ? Colors.grey : AppColors.primaryDark),
           suffixIcon: isLocked ? const Icon(Icons.lock, color: Colors.grey, size: 18) : null,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
           disabledBorder: OutlineInputBorder(
@@ -507,7 +508,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ],
         decoration: InputDecoration(
           labelText: label,
-          prefixIcon: const Icon(Icons.lock, color: Colors.black87),
+          prefixIcon: const Icon(Icons.lock, color: AppColors.primaryDark),
           suffixIcon: IconButton(
             icon: Icon(obscure ? Icons.visibility_off : Icons.visibility),
             onPressed: onToggle,

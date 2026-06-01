@@ -26,6 +26,27 @@ Este proyecto **no** se despliega en Railway; se ejecuta en emulador o dispositi
 
 La URL se define en `lib/config/api_config.dart` o con `--dart-define`.
 
+### ngrok (backend local público)
+
+```powershell
+flutter run --dart-define=API_BASE_URL=https://TU-SUBDOMINIO.ngrok-free.app/api
+```
+
+> Nota importante: en **Flutter Web (Chrome/Edge)** puede aparecer bloqueo **CORS** usando ngrok.
+> Si ocurre, ejecuta la app como `Windows` o `Android`, o usa backend desplegado en Railway.
+
+### Railway (backend desplegado)
+
+```powershell
+flutter run --dart-define=API_BASE_URL=https://TU-BACKEND.up.railway.app/api
+```
+
+Opcional (activo por defecto): para evitar la pantalla intermedia de ngrok en entornos web
+
+```powershell
+flutter run --dart-define=API_BASE_URL=https://TU-SUBDOMINIO.ngrok-free.app/api --dart-define=API_SKIP_NGROK_WARNING=true
+```
+
 ### Windows / Web / simulador iOS (API en la misma PC)
 
 ```dart

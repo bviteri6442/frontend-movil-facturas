@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/cart.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 
 class CartScreen extends StatefulWidget {
 	final Cart cart;
@@ -156,7 +157,7 @@ class _CartScreenState extends State<CartScreen> {
 					if (saldoSuficiente)
 						ElevatedButton(
 							style: ElevatedButton.styleFrom(
-								backgroundColor: Colors.black87,
+								backgroundColor: AppColors.primaryDark,
 								foregroundColor: Colors.white,
 							),
 							onPressed: () async {
@@ -213,8 +214,11 @@ class _CartScreenState extends State<CartScreen> {
 	@override
 	Widget build(BuildContext context) {
 		return Scaffold(
+			backgroundColor: AppColors.background,
 			appBar: AppBar(
 				title: const Text('Carrito de compras'),
+				backgroundColor: AppColors.primaryDark,
+				foregroundColor: Colors.white,
 				actions: [
 					IconButton(
 						icon: const Icon(Icons.cleaning_services),
@@ -239,6 +243,7 @@ class _CartScreenState extends State<CartScreen> {
 											final item = widget.cart.items[index];
 											return Card(
 												margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+												elevation: 1.5,
 												child: Padding(
 													padding: const EdgeInsets.all(12.0),
 													child: Row(
@@ -252,8 +257,14 @@ class _CartScreenState extends State<CartScreen> {
 																		Text(item.nombre, style: const TextStyle(fontWeight: FontWeight.bold)),
 																		const SizedBox(height: 8),
 																		Text('Cantidad: ${item.cantidad}'),
-																		Text('Subtotal: ${item.subtotal.toStringAsFixed(2)}'),
-																		Text('Total: ${item.totalConIva.toStringAsFixed(2)}'),
+																		Text('Subtotal: \$${item.subtotal.toStringAsFixed(2)}'),
+																		Text(
+																			'Total: \$${item.totalConIva.toStringAsFixed(2)}',
+																			style: const TextStyle(
+																				fontWeight: FontWeight.w600,
+																				color: AppColors.primaryDark,
+																			),
+																		),
 																	],
 																),
 															),
@@ -284,11 +295,11 @@ class _CartScreenState extends State<CartScreen> {
 															Column(
 																children: [
 																	IconButton(
-																		icon: const Icon(Icons.add, color: Colors.green),
+																		icon: const Icon(Icons.add, color: AppColors.primary),
 																		onPressed: () => _incrementItem(item),
 																	),
 																	IconButton(
-																		icon: const Icon(Icons.remove, color: Colors.orange),
+																		icon: const Icon(Icons.remove, color: Colors.amber),
 																		onPressed: () => _decrementItem(item),
 																	),
 																	IconButton(
@@ -312,12 +323,12 @@ class _CartScreenState extends State<CartScreen> {
 							height: 48,
 							child: ElevatedButton(
 								style: ElevatedButton.styleFrom(
-									backgroundColor: Colors.yellow[700],
-									foregroundColor: Colors.black,
+									backgroundColor: AppColors.primary,
+									foregroundColor: Colors.white,
 									shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
 								),
 								onPressed: widget.cart.items.isEmpty ? null : _showFinishModal,
-								child: const Text('FINALIZAR A COMPRAR', style: TextStyle(fontWeight: FontWeight.bold)),
+								child: const Text('Finalizar compra', style: TextStyle(fontWeight: FontWeight.bold)),
 							),
 						),
 					),

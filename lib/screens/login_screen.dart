@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/user.dart';
+import '../theme/app_theme.dart';
 
 class LoginScreen extends StatefulWidget {
 	const LoginScreen({Key? key}) : super(key: key);
@@ -34,28 +35,39 @@ class _LoginScreenState extends State<LoginScreen> {
 
 	void _login() async {
 		if (!_formKey.currentState!.validate()) return;
+		if (_isLoading) return;
 		setState(() {
 			_isLoading = true;
 			_errorMessage = null;
 		});
-		final api = ApiService();
-		final result = await api.login(_emailController.text.trim(), _passwordController.text);
-		setState(() {
-			_isLoading = false;
-		});
-		if (result['success'] == true && result['user'] != null) {
-			try {
-				print('[DEBUG] JSON recibido en login: ${result['user']}');
-				final user = User.fromJson(result['user']);
-				Navigator.pushReplacementNamed(context, '/catalog', arguments: user);
-			} catch (e) {
+		try {
+			final api = ApiService();
+			final result = await api.login(_emailController.text.trim(), _passwordController.text);
+			if (!mounted) return;
+			setState(() {
+				_isLoading = false;
+			});
+			if (result['success'] == true && result['user'] != null) {
+				try {
+					final user = User.fromJson(result['user']);
+					if (!mounted) return;
+					Navigator.pushReplacementNamed(context, '/catalog', arguments: user);
+				} catch (e) {
+					if (!mounted) return;
+					setState(() {
+						_errorMessage = 'Error al procesar los datos del usuario.';
+					});
+				}
+			} else {
 				setState(() {
-					_errorMessage = 'Error al procesar los datos del usuario.';
+					_errorMessage = result['message'] ?? 'Error de autenticación';
 				});
 			}
-		} else {
+		} catch (e) {
+			if (!mounted) return;
 			setState(() {
-				_errorMessage = result['message'] ?? 'Error de autenticación';
+				_isLoading = false;
+				_errorMessage = 'No se pudo conectar al backend. Verifica URL API/CORS/ngrok.';
 			});
 		}
 	}
@@ -67,18 +79,18 @@ class _LoginScreenState extends State<LoginScreen> {
 	@override
 	Widget build(BuildContext context) {
 		return Scaffold(
-			backgroundColor: const Color(0xFFF5F4FA),
+			backgroundColor: AppColors.background,
 			body: Center(
 				child: SingleChildScrollView(
 					padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
 					child: Column(
 						mainAxisAlignment: MainAxisAlignment.center,
 						children: [
-							const Icon(Icons.shopping_cart, size: 64, color: Colors.black87),
+							const Icon(Icons.shopping_cart, size: 64, color: AppColors.primaryDark),
 							const SizedBox(height: 16),
 							const Text(
 								'Iniciar Sesión',
-								style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.black87),
+								style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.text),
 							),
 							const SizedBox(height: 8),
 							const Text(
@@ -145,7 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
 											child: ElevatedButton(
 												onPressed: _isLoading ? null : _login,
 												style: ElevatedButton.styleFrom(
-													backgroundColor: Colors.black87, foregroundColor: Colors.white,
+													backgroundColor: AppColors.primary, foregroundColor: Colors.white,
 													padding: const EdgeInsets.symmetric(vertical: 16),
 													shape: RoundedRectangleBorder(
 														borderRadius: BorderRadius.circular(8),
@@ -169,7 +181,9 @@ class _LoginScreenState extends State<LoginScreen> {
 								children: [
 									const Text('¿No tienes cuenta?'),
 									TextButton(
-										onPressed: _goToRegister,									style: TextButton.styleFrom(foregroundColor: Colors.black87),										child: const Text('Regístrate'),
+										onPressed: _goToRegister,
+										style: TextButton.styleFrom(foregroundColor: AppColors.primaryDark),
+										child: const Text('Regístrate'),
 									),
 								],
 							),

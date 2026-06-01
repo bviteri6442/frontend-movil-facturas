@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import '../theme/app_theme.dart';
 
 class HistoryScreen extends StatefulWidget {
   final User user;
@@ -12,14 +13,28 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   final ApiService _api = ApiService();
+  final TextEditingController _searchCtrl = TextEditingController();
   bool _isLoading = true;
   String? _error;
   List<Map<String, dynamic>> _ventas = [];
+  String _searchQuery = '';
+  String _estadoFiltro = 'todos';
+  DateTime? _desde;
+  DateTime? _hasta;
 
   @override
   void initState() {
     super.initState();
+    _searchCtrl.addListener(() {
+      setState(() => _searchQuery = _searchCtrl.text.trim().toLowerCase());
+    });
     _loadHistory();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _loadHistory() async {
@@ -82,12 +97,64 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
   }
 
+  List<Map<String, dynamic>> get _ventasFiltradas {
+    return _ventas.where((venta) {
+      final numero = (venta['numeroFactura'] ?? '').toString().toLowerCase();
+      final estado = (venta['estado'] ?? '').toString().toLowerCase();
+      final fecha = DateTime.tryParse((venta['fechaVenta'] ?? '').toString());
+      final coincideTexto = _searchQuery.isEmpty || numero.contains(_searchQuery);
+      final coincideEstado = _estadoFiltro == 'todos' || estado == _estadoFiltro;
+      final coincideDesde = _desde == null || (fecha != null && !fecha.isBefore(_desde!));
+      final coincideHasta = _hasta == null ||
+          (fecha != null &&
+              !fecha.isAfter(
+                DateTime(_hasta!.year, _hasta!.month, _hasta!.day, 23, 59, 59),
+              ));
+      return coincideTexto && coincideEstado && coincideDesde && coincideHasta;
+    }).toList();
+  }
+
+  Future<void> _pickDesde() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _desde ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (picked != null) setState(() => _desde = picked);
+  }
+
+  Future<void> _pickHasta() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _hasta ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (picked != null) setState(() => _hasta = picked);
+  }
+
+  void _limpiarFiltros() {
+    setState(() {
+      _searchCtrl.clear();
+      _searchQuery = '';
+      _estadoFiltro = 'todos';
+      _desde = null;
+      _hasta = null;
+    });
+  }
+
+  double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value') ?? 0;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Historial de compras'),
-        backgroundColor: Colors.black87,
+        backgroundColor: AppColors.primaryDark,
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
@@ -113,7 +180,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                         const SizedBox(height: 16),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.black87,
+                            backgroundColor: AppColors.primaryDark,
                             foregroundColor: Colors.white,
                           ),
                           onPressed: _loadHistory,
@@ -142,14 +209,97 @@ class _HistoryScreenState extends State<HistoryScreen> {
                       onRefresh: _loadHistory,
                       child: ListView.separated(
                         padding: const EdgeInsets.all(12),
-                        itemCount: _ventas.length,
+                        itemCount: _ventasFiltradas.length + 1,
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (context, index) {
-                          final venta = _ventas[index];
+                          if (index == 0) {
+                            return Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  children: [
+                                    TextField(
+                                      controller: _searchCtrl,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Buscar por número de factura',
+                                        prefixIcon: Icon(Icons.search),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: DropdownButtonFormField<String>(
+                                            initialValue: _estadoFiltro,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Estado',
+                                            ),
+                                            items: const [
+                                              DropdownMenuItem(value: 'todos', child: Text('Todos')),
+                                              DropdownMenuItem(value: 'completada', child: Text('Completada')),
+                                              DropdownMenuItem(value: 'pendiente', child: Text('Pendiente')),
+                                              DropdownMenuItem(value: 'cancelada', child: Text('Cancelada')),
+                                              DropdownMenuItem(value: 'anulada', child: Text('Anulada')),
+                                            ],
+                                            onChanged: (v) => setState(() => _estadoFiltro = v ?? 'todos'),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        OutlinedButton(
+                                          onPressed: _limpiarFiltros,
+                                          child: const Text('Limpiar'),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            onPressed: _pickDesde,
+                                            icon: const Icon(Icons.event),
+                                            label: Text(
+                                              _desde == null
+                                                  ? 'Desde'
+                                                  : '${_desde!.day}/${_desde!.month}/${_desde!.year}',
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            onPressed: _pickHasta,
+                                            icon: const Icon(Icons.event_available),
+                                            label: Text(
+                                              _hasta == null
+                                                  ? 'Hasta'
+                                                  : '${_hasta!.day}/${_hasta!.month}/${_hasta!.year}',
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Text(
+                                        'Resultados: ${_ventasFiltradas.length}',
+                                        style: const TextStyle(
+                                          color: AppColors.primaryDark,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+                          final venta = _ventasFiltradas[index - 1];
                           final estado = venta['estado'] as String?;
-                          final totalVenta = (venta['totalVenta'] ?? 0).toDouble();
-                          final subtotal = (venta['subtotal'] ?? 0).toDouble();
-                          final totalImpuesto = (venta['totalImpuesto'] ?? 0).toDouble();
+                          final totalVenta = _asDouble(venta['totalVenta']);
+                          final subtotal = _asDouble(venta['subtotal']);
+                          final totalImpuesto = _asDouble(venta['totalImpuesto']);
 
                           return Card(
                             elevation: 2,
@@ -168,7 +318,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                     children: [
                                       Row(
                                         children: [
-                                          const Icon(Icons.receipt, size: 18, color: Colors.black87),
+                                          const Icon(Icons.receipt, size: 18, color: AppColors.primaryDark),
                                           const SizedBox(width: 6),
                                           Text(
                                             venta['numeroFactura'] ?? '-',
@@ -182,7 +332,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                                         decoration: BoxDecoration(
-                                          color: _estadoColor(estado).withOpacity(0.12),
+                                          color: _estadoColor(estado).withValues(alpha: 0.12),
                                           borderRadius: BorderRadius.circular(20),
                                           border: Border.all(color: _estadoColor(estado)),
                                         ),
@@ -240,7 +390,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                             style: const TextStyle(
                                               fontWeight: FontWeight.bold,
                                               fontSize: 16,
-                                              color: Colors.black87,
+                                              color: AppColors.primaryDark,
                                             ),
                                           ),
                                         ],

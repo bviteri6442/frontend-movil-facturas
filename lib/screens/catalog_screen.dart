@@ -4,8 +4,7 @@ import 'package:proyecto_north/screens/cart_screen.dart';
 import '../services/api_service.dart';
 import '../models/user.dart';
 import '../models/cart.dart';
-
-import 'cart_screen.dart';
+import '../theme/app_theme.dart';
 
 class Product {
   final int id;
@@ -96,12 +95,10 @@ class _CustomDrawerState extends State<CustomDrawer> {
                   ? const Icon(Icons.person, size: 40, color: Colors.black87)
                   : null,
             ),
-            decoration: const BoxDecoration(
-              color: Colors.black87,
-            ),
+            decoration: const BoxDecoration(color: AppColors.primaryDark),
           ),
           ListTile(
-            leading: const Icon(Icons.person, color: Colors.black87),
+            leading: const Icon(Icons.person, color: AppColors.primaryDark),
             title: const Text('Editar Perfil'),
             onTap: () {
               Navigator.pop(context);
@@ -109,7 +106,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.history, color: Colors.black87),
+            leading: const Icon(Icons.history, color: AppColors.primaryDark),
             title: const Text('Historial de compras'),
             onTap: () {
               Navigator.pop(context);
@@ -117,7 +114,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.account_balance_wallet, color: Colors.black87),
+            leading: const Icon(Icons.account_balance_wallet, color: AppColors.primaryDark),
             title: const Text('Agregar saldo'),
             onTap: () {
               Navigator.pop(context);
@@ -125,7 +122,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.support_agent, color: Colors.black87),
+            leading: const Icon(Icons.support_agent, color: AppColors.primaryDark),
             title: const Text('Servicio al cliente'),
             onTap: () {
               Navigator.pop(context);
@@ -191,7 +188,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
         limit: _pageSize,
         search: search ?? _searchTerm,
       );
-      print('[DEBUG] Respuesta paginada: $data');
         final productos = (data['productos'] as List<dynamic>?) ?? [];
         final products = productos
           .where((e) => (e['stock'] ?? 0) > 0)
@@ -328,7 +324,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black87,
+              backgroundColor: AppColors.primaryDark,
               foregroundColor: Colors.white,
             ),
             onPressed: () {
@@ -364,21 +360,49 @@ class _CatalogScreenState extends State<CatalogScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Catálogo de Productos'),
-        backgroundColor: Colors.black87,
+        backgroundColor: AppColors.primaryDark,
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.shopping_cart),
-            tooltip: 'Ver carrito',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => CartScreen(cart: _cart),
-                  settings: RouteSettings(arguments: user),
-                ),
-              );
-            },
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: IconButton(
+              tooltip: 'Ver carrito',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (context) => CartScreen(cart: _cart),
+                    settings: RouteSettings(arguments: user),
+                  ),
+                );
+              },
+              icon: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Icon(Icons.shopping_cart),
+                  if (_cart.items.isNotEmpty)
+                    Positioned(
+                      right: -8,
+                      top: -8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${_cart.items.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -395,7 +419,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                labelText: 'Buscar productos',
+                hintText: 'Buscar productos por nombre o descripción',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               ),
@@ -413,7 +437,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   icon: const Icon(Icons.keyboard),
                   label: const Text('Ir a página'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black87,
+                    backgroundColor: AppColors.primaryDark,
                     foregroundColor: Colors.white,
                   ),
                 ),
@@ -456,7 +480,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8.0),
                             child: Card(
-                              elevation: 3,
+                              elevation: 1.5,
                               child: Padding(
                                 padding: const EdgeInsets.all(12.0),
                                 child: Column(
@@ -507,7 +531,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
                                               ),
                                               const SizedBox(height: 4),
-                                              Text(product.descripcion),
+                                              Text(
+                                                product.descripcion,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(color: Colors.black54),
+                                              ),
                                               const SizedBox(height: 8),
                                               Row(
                                                 children: [
@@ -548,8 +577,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                                           icon: const Icon(Icons.add_shopping_cart),
                                           label: const Text('Añadir al carrito'),
                                           style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.black87,
-                                          foregroundColor: Colors.white,
+                                            backgroundColor: AppColors.primary,
+                                            foregroundColor: Colors.white,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius: BorderRadius.circular(20),
+                                            ),
                                           ),
                                           onPressed: () => _addToCart(product),
                                         ),
@@ -572,7 +604,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   icon: const Icon(Icons.keyboard),
                   label: const Text('Ir a página'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black87,
+                    backgroundColor: AppColors.primaryDark,
                     foregroundColor: Colors.white,
                   ),
                 ),
@@ -602,14 +634,21 @@ Widget _infoBox(String label, String value) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(
-      border: Border.all(color: Colors.black54),
-      borderRadius: BorderRadius.circular(4),
+      color: const Color(0xFFF8FBF7),
+      border: Border.all(color: const Color(0xFFD9E6D5)),
+      borderRadius: BorderRadius.circular(8),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.black54)),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text(label, style: const TextStyle(fontSize: 11, color: Colors.black54)),
+        Text(
+          value,
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: AppColors.primaryDark,
+          ),
+        ),
       ],
     ),
   );

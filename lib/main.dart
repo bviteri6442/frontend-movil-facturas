@@ -6,6 +6,7 @@ import 'models/user.dart';
 import 'screens/register_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/history_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(const MyApp());
@@ -19,24 +20,33 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'PuntoVenta',
       debugShowCheckedModeBanner: false,
+      theme: AppTheme.light,
       initialRoute: '/',
       routes: {
         '/': (context) => const LoginScreen(),
         '/catalog': (context) {
-          final user = ModalRoute.of(context)!.settings.arguments as User;
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is! User) return const LoginScreen();
+          final user = args;
           return CatalogScreen(user: user);
         },
-        '/register': (context) => RegisterScreen(),
+        '/register': (context) => const RegisterScreen(),
         '/profile': (context) {
-          final user = ModalRoute.of(context)!.settings.arguments as User;
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is! User) return const LoginScreen();
+          final user = args;
           return ProfileScreen(user: user);
         },
         '/saldo': (context) {
-          final user = ModalRoute.of(context)!.settings.arguments as User;
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is! User) return const LoginScreen();
+          final user = args;
           return SaldoScreen(user: user);
         },
         '/history': (context) {
-          final user = ModalRoute.of(context)!.settings.arguments as User;
+          final args = ModalRoute.of(context)?.settings.arguments;
+          if (args is! User) return const LoginScreen();
+          final user = args;
           return HistoryScreen(user: user);
         },
       },
