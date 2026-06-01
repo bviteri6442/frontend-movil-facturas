@@ -188,14 +188,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
         limit: _pageSize,
         search: search ?? _searchTerm,
       );
-        final productos = (data['productos'] as List<dynamic>?) ?? [];
+        final productos = (data['data'] as List<dynamic>?)
+            ?? (data['productos'] as List<dynamic>?)
+            ?? [];
         final products = productos
           .where((e) => (e['stock'] ?? 0) > 0)
           .map((e) => Product.fromJson(e))
           .toList();
       setState(() {
         _currentPageProducts = products;
-        _totalProducts = data['total'] ?? products.length;
+        _totalProducts = (data['total'] as int?) ?? products.length;
         _isLoading = false;
       });
     } catch (e) {
