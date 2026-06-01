@@ -149,6 +149,38 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return double.tryParse('$value') ?? 0;
   }
 
+  int? _ventaIdFrom(Map<String, dynamic> venta) {
+    final id = venta['ventaId'] ?? venta['id'];
+    if (id is int) return id;
+    return int.tryParse('$id');
+  }
+
+  Future<void> _showFacturaDetail(Map<String, dynamic> ventaResumen) async {
+    final ventaId = _ventaIdFrom(ventaResumen);
+    if (ventaId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No se pudo identificar la factura.')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return _FacturaDetailDialog(
+          api: _api,
+          ventaId: ventaId,
+          resumen: ventaResumen,
+          formatFecha: _formatFecha,
+          estadoColor: _estadoColor,
+          asDouble: _asDouble,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -307,7 +339,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                               borderRadius: BorderRadius.circular(10),
                               side: BorderSide(color: Colors.black12),
                             ),
-                            child: Padding(
+                            clipBehavior: Clip.antiAlias,
+                            child: InkWell(
+                              onTap: () => _showFacturaDetail(venta),
+                              child: Padding(
                               padding: const EdgeInsets.all(14),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -316,19 +351,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Row(
-                                        children: [
-                                          const Icon(Icons.receipt, size: 18, color: AppColors.primaryDark),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            venta['numeroFactura'] ?? '-',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 15,
+                                      Expanded(
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.receipt, size: 18, color: AppColors.primaryDark),
+                                            const SizedBox(width: 6),
+                                            Expanded(
+                                              child: Text(
+                                                venta['numeroFactura'] ?? '-',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 15,
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                        ],
+                                          ],
+                                        ),
                                       ),
+                                      const Icon(Icons.chevron_right, color: Colors.black38, size: 22),
+                                      const SizedBox(width: 4),
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                                         decoration: BoxDecoration(
@@ -400,10 +443,312 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 ],
                               ),
                             ),
+                            ),
                           );
                         },
                       ),
                     ),
+    );
+  }
+}
+
+class _FacturaDetailDialog extends StatefulWidget {
+  final ApiService api;
+  final int ventaId;
+  final Map<String, dynamic> resumen;
+  final String Function(String?) formatFecha;
+  final Color Function(String?) estadoColor;
+  final double Function(dynamic) asDouble;
+
+  const _FacturaDetailDialog({
+    required this.api,
+    required this.ventaId,
+    required this.resumen,
+    required this.formatFecha,
+    required this.estadoColor,
+    required this.asDouble,
+  });
+
+  @override
+  State<_FacturaDetailDialog> createState() => _FacturaDetailDialogState();
+}
+
+class _FacturaDetailDialogState extends State<_FacturaDetailDialog> {
+  Map<String, dynamic>? _detalle;
+  String? _error;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final data = await widget.api.getVentaById(widget.ventaId);
+      if (!mounted) return;
+      setState(() {
+        _detalle = data;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '');
+        _loading = false;
+      });
+    }
+  }
+
+  Map<String, dynamic> get _v => _detalle ?? widget.resumen;
+
+  List<Map<String, dynamic>> get _lineas {
+    final raw = _v['detalles'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Widget _infoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(label, style: const TextStyle(color: Colors.black54, fontSize: 13)),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final estado = (_v['estado'] ?? '').toString();
+    final numero = (_v['numeroFactura'] ?? '-').toString();
+    final subtotal = widget.asDouble(_v['subtotal']);
+    final impuesto = widget.asDouble(_v['totalImpuesto']);
+    final total = widget.asDouble(_v['totalVenta']);
+    final ivaPct = widget.asDouble(_v['porcentajeIVA']);
+    final observaciones = (_v['observaciones'] ?? '').toString().trim();
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+          maxWidth: 500,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+              decoration: const BoxDecoration(
+                color: AppColors.primaryDark,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.receipt_long, color: Colors.white),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          numero,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 17,
+                          ),
+                        ),
+                        Text(
+                          widget.formatFecha(_v['fechaVenta']?.toString()),
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white70),
+                    ),
+                    child: Text(
+                      estado.isEmpty ? '-' : estado,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 11),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: _loading
+                  ? const Padding(
+                      padding: EdgeInsets.all(40),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_error != null)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                'No se cargaron los productos: $_error',
+                                style: TextStyle(color: Colors.orange[800], fontSize: 12),
+                              ),
+                            ),
+                          _infoRow('Cliente', (_v['clienteNombre'] ?? '—').toString()),
+                          _infoRow('Atendido por', (_v['usuarioNombre'] ?? '—').toString()),
+                          if (observaciones.isNotEmpty)
+                            _infoRow('Observaciones', observaciones),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Productos',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: AppColors.primaryDark,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (_lineas.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                              child: Text(
+                                'Sin detalle de productos disponible.',
+                                style: TextStyle(color: Colors.black54),
+                              ),
+                            )
+                          else
+                            ..._lineas.map((linea) {
+                              final nombre = (linea['productoNombre'] ?? 'Producto').toString();
+                              final cantidad = linea['cantidad'] ?? 0;
+                              final precio = widget.asDouble(linea['precioUnitario']);
+                              final descuento = widget.asDouble(linea['descuento']);
+                              final lineTotal = widget.asDouble(linea['total']);
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FBF7),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: const Color(0xFFD9E6D5)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      nombre,
+                                      style: const TextStyle(fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Cant: $cantidad  ·  P. unit: \$${precio.toStringAsFixed(2)}'
+                                      '${descuento > 0 ? '  ·  Desc: ${descuento.toStringAsFixed(0)}%' : ''}',
+                                      style: const TextStyle(fontSize: 12, color: Colors.black54),
+                                    ),
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Text(
+                                        '\$${lineTotal.toStringAsFixed(2)}',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.primaryDark,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          const Divider(height: 24),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Subtotal', style: TextStyle(color: Colors.black54)),
+                              Text('\$${subtotal.toStringAsFixed(2)}'),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                ivaPct > 0 ? 'IVA (${ivaPct.toStringAsFixed(0)}%)' : 'IVA',
+                                style: const TextStyle(color: Colors.black54),
+                              ),
+                              Text('\$${impuesto.toStringAsFixed(2)}'),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Total',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: AppColors.primaryDark,
+                                ),
+                              ),
+                              Text(
+                                '\$${total.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                  color: AppColors.primaryDark,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryDark,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Cerrar'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

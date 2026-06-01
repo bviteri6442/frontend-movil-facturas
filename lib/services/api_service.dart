@@ -100,6 +100,24 @@ class ApiService {
 		return all;
 	}
 
+	/// Detalle de una venta/factura (incluye líneas de productos).
+	Future<Map<String, dynamic>> getVentaById(int ventaId) async {
+		final token = await getToken();
+		if (token == null) throw Exception('No autenticado');
+
+		final response = await http.get(
+			Uri.parse('$baseUrl/Ventas/$ventaId'),
+			headers: _headers(token: token),
+		);
+		if (response.statusCode == 200) {
+			return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+		}
+		if (response.statusCode == 404) {
+			throw Exception('Factura no encontrada');
+		}
+		throw Exception('Error al obtener detalle de factura: ${response.statusCode}');
+	}
+
 	List<Map<String, dynamic>> _extractListFromResponse(dynamic decoded) {
 		if (decoded is List) {
 			return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
