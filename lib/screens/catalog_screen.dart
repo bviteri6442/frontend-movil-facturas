@@ -264,6 +264,173 @@ class _CatalogScreenState extends State<CatalogScreen> {
 
   int get _totalPages => (_totalProducts / _pageSize).ceil();
 
+  Widget _buildPaginationBar() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: _showGoToPageDialog,
+            icon: const Icon(Icons.keyboard, size: 18),
+            label: const Text('Ir a página'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primaryDark,
+              side: const BorderSide(color: AppColors.primaryDark),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.chevron_left),
+              onPressed: _currentPage > 1 ? () => _goToPage(_currentPage - 1) : null,
+            ),
+            Expanded(
+              child: Text(
+                'Página $_currentPage de $_totalPages',
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.chevron_right),
+              onPressed: _currentPage < _totalPages ? () => _goToPage(_currentPage + 1) : null,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProductCard(Product product) {
+    return Card(
+      elevation: 1.5,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildProductImage(product, size: 72),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.nombre,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        product.descripcion,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.black54, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                _infoChip('Stock', '${product.stock}'),
+                _infoChip('Precio u.', _formatMoney(product.precioUnitario)),
+                _infoChip('IVA', '${(product.iva * 100).toStringAsFixed(0)}%'),
+                _infoChip('Total', _formatMoney(product.total)),
+                _infoChip('Total c/IVA', _formatMoney(product.totalConIva), emphasized: true),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.add_shopping_cart, size: 20),
+                label: const Text('Añadir al carrito'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                onPressed: () => _addToCart(product),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProductImage(Product product, {required double size}) {
+    final placeholder = Container(
+      width: size,
+      height: size,
+      color: Colors.grey[200],
+      child: Icon(Icons.inventory_2, size: size * 0.45, color: Colors.grey),
+    );
+
+    if (product.imagenUrl == null || product.imagenUrl!.isEmpty) {
+      return ClipRRect(borderRadius: BorderRadius.circular(8), child: placeholder);
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.network(
+        product.imagenUrl!,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => placeholder,
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return Container(
+            width: size,
+            height: size,
+            color: Colors.grey[200],
+            alignment: Alignment.center,
+            child: const SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  String _formatMoney(double value) {
+    if (value >= 1000000) {
+      return '\$${(value / 1000000).toStringAsFixed(2)}M';
+    }
+    if (value >= 10000) {
+      return '\$${(value / 1000).toStringAsFixed(1)}K';
+    }
+    return '\$${value.toStringAsFixed(2)}';
+  }
+
   void _addToCart(Product product) {
     if (product.precioUnitario <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -429,44 +596,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 _searchProducts(value.trim());
               },
             ),
-            const SizedBox(height: 16),
-            // Paginación
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _showGoToPageDialog,
-                  icon: const Icon(Icons.keyboard),
-                  label: const Text('Ir a página'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryDark,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-                Expanded(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back),
-                        onPressed: _currentPage > 1 ? () => _goToPage(_currentPage - 1) : null,
-                      ),
-                      Flexible(
-                        child: Text(
-                          'Página $_currentPage de $_totalPages',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.arrow_forward),
-                        onPressed: _currentPage < _totalPages ? () => _goToPage(_currentPage + 1) : null,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            _buildPaginationBar(),
+            const SizedBox(height: 12),
             if (_isLoading)
               const Expanded(child: Center(child: CircularProgressIndicator())),
             if (_error != null)
@@ -480,151 +612,14 @@ class _CatalogScreenState extends State<CatalogScreen> {
                         itemBuilder: (context, index) {
                           final product = _currentPageProducts[index];
                           return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
-                            child: Card(
-                              elevation: 1.5,
-                              child: Padding(
-                                padding: const EdgeInsets.all(12.0),
-                                child: Column(
-                                  children: [
-                                    Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        // Imagen del producto
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(8),
-                                          child: product.imagenUrl != null && product.imagenUrl!.isNotEmpty
-                                              ? Image.network(
-                                                  product.imagenUrl!,
-                                                  width: 120,
-                                                  height: 120,
-                                                  fit: BoxFit.cover,
-                                                  errorBuilder: (context, error, stackTrace) => Container(
-                                                    width: 120,
-                                                    height: 120,
-                                                    color: Colors.grey[200],
-                                                    child: const Icon(Icons.image_not_supported, size: 48, color: Colors.grey),
-                                                  ),
-                                                  loadingBuilder: (context, child, loadingProgress) {
-                                                    if (loadingProgress == null) return child;
-                                                    return Container(
-                                                      width: 120,
-                                                      height: 120,
-                                                      color: Colors.grey[200],
-                                                      child: const Center(child: CircularProgressIndicator()),
-                                                    );
-                                                  },
-                                                )
-                                              : Container(
-                                                  width: 120,
-                                                  height: 120,
-                                                  color: Colors.grey[200],
-                                                  child: const Icon(Icons.inventory_2, size: 48, color: Colors.grey),
-                                                ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        // Info principal
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                product.nombre,
-                                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                product.descripcion,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(color: Colors.black54),
-                                              ),
-                                              const SizedBox(height: 8),
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        Row(
-                                                          children: [
-                                                            _infoBox('Stock', product.stock.toString()),
-                                                            const SizedBox(width: 8),
-                                                            _infoBox('Precio unitario', '\$${product.precioUnitario.toStringAsFixed(2)}'),
-                                                            const SizedBox(width: 8),
-                                                            _infoBox('IVA', '${(product.iva * 100).toStringAsFixed(0)}%'),
-                                                          ],
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  // Total sin IVA
-                                                  _infoBox('Total', '\$${product.total.toStringAsFixed(2)}'),
-                                                  const SizedBox(width: 8),
-                                                  // Total con IVA
-                                                  _infoBox('Total c/IVA', '\$${product.totalConIva.toStringAsFixed(2)}'),
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    // Botón añadir al carrito
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        ElevatedButton.icon(
-                                          icon: const Icon(Icons.add_shopping_cart),
-                                          label: const Text('Añadir al carrito'),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: AppColors.primary,
-                                            foregroundColor: Colors.white,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(20),
-                                            ),
-                                          ),
-                                          onPressed: () => _addToCart(product),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 6.0),
+                            child: _buildProductCard(product),
                           );
                         },
                       ),
               ),
-            // Paginación
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _showGoToPageDialog,
-                  icon: const Icon(Icons.keyboard),
-                  label: const Text('Ir a página'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryDark,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-                Row(
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back),
-                      onPressed: _currentPage > 1 ? () => _goToPage(_currentPage - 1) : null,
-                    ),
-                    Text('Página $_currentPage de $_totalPages'),
-                    IconButton(
-                      icon: const Icon(Icons.arrow_forward),
-                      onPressed: _currentPage < _totalPages ? () => _goToPage(_currentPage + 1) : null,
-                    ),
-                  ],
-                ),
-              ],
-            ),
+            const SizedBox(height: 8),
+            _buildPaginationBar(),
           ],
         ),
       ),
@@ -632,23 +627,36 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 }
 
-Widget _infoBox(String label, String value) {
+Widget _infoChip(String label, String value, {bool emphasized = false}) {
   return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    constraints: const BoxConstraints(minWidth: 72, maxWidth: 160),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     decoration: BoxDecoration(
-      color: const Color(0xFFF8FBF7),
-      border: Border.all(color: const Color(0xFFD9E6D5)),
+      color: emphasized ? const Color(0xFFE8F5E6) : const Color(0xFFF8FBF7),
+      border: Border.all(
+        color: emphasized ? AppColors.primary : const Color(0xFFD9E6D5),
+      ),
       borderRadius: BorderRadius.circular(8),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label, style: const TextStyle(fontSize: 11, color: Colors.black54)),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 10, color: Colors.black54),
+        ),
+        const SizedBox(height: 2),
         Text(
           value,
-          style: const TextStyle(
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
             fontWeight: FontWeight.bold,
-            color: AppColors.primaryDark,
+            fontSize: emphasized ? 13 : 12,
+            color: emphasized ? AppColors.primaryDark : AppColors.primaryDark,
           ),
         ),
       ],
