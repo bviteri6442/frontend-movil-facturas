@@ -18,7 +18,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
   String? _error;
   List<Map<String, dynamic>> _ventas = [];
   String _searchQuery = '';
-  String _estadoFiltro = 'todos';
   DateTime? _desde;
   DateTime? _hasta;
 
@@ -83,34 +82,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
         '${local.minute.toString().padLeft(2, '0')}';
   }
 
-  Color _estadoColor(String? estado) {
-    switch (estado?.toLowerCase()) {
-      case 'completada':
-        return Colors.green[700]!;
-      case 'cancelada':
-      case 'anulada':
-        return Colors.red;
-      case 'pendiente':
-        return Colors.orange;
-      default:
-        return Colors.black54;
-    }
-  }
-
   List<Map<String, dynamic>> get _ventasFiltradas {
     return _ventas.where((venta) {
       final numero = (venta['numeroFactura'] ?? '').toString().toLowerCase();
-      final estado = (venta['estado'] ?? '').toString().toLowerCase();
       final fecha = DateTime.tryParse((venta['fechaVenta'] ?? '').toString());
       final coincideTexto = _searchQuery.isEmpty || numero.contains(_searchQuery);
-      final coincideEstado = _estadoFiltro == 'todos' || estado == _estadoFiltro;
       final coincideDesde = _desde == null || (fecha != null && !fecha.isBefore(_desde!));
       final coincideHasta = _hasta == null ||
           (fecha != null &&
               !fecha.isAfter(
                 DateTime(_hasta!.year, _hasta!.month, _hasta!.day, 23, 59, 59),
               ));
-      return coincideTexto && coincideEstado && coincideDesde && coincideHasta;
+      return coincideTexto && coincideDesde && coincideHasta;
     }).toList();
   }
 
@@ -138,7 +121,6 @@ class _HistoryScreenState extends State<HistoryScreen> {
     setState(() {
       _searchCtrl.clear();
       _searchQuery = '';
-      _estadoFiltro = 'todos';
       _desde = null;
       _hasta = null;
     });
@@ -174,7 +156,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ventaId: ventaId,
           resumen: ventaResumen,
           formatFecha: _formatFecha,
-          estadoColor: _estadoColor,
+
           asDouble: _asDouble,
         );
       },
@@ -250,40 +232,31 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                 padding: const EdgeInsets.all(12),
                                 child: Column(
                                   children: [
-                                    TextField(
-                                      controller: _searchCtrl,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Buscar por número de factura',
-                                        prefixIcon: Icon(Icons.search),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 10),
                                     Row(
                                       children: [
                                         Expanded(
-                                          child: DropdownButtonFormField<String>(
-                                            initialValue: _estadoFiltro,
-                                            decoration: const InputDecoration(
-                                              labelText: 'Estado',
+                                          flex: 2,
+                                          child: TextField(
+                                            controller: _searchCtrl,
+                                            decoration: InputDecoration(
+                                              labelText: 'Buscar por número de factura',
+                                              prefixIcon: const Icon(Icons.search),
+                                              contentPadding: const EdgeInsets.symmetric(
+                                                vertical: 12,
+                                                horizontal: 12,
+                                              ),
+                                              labelStyle: const TextStyle(fontSize: 11),
                                             ),
-                                            items: const [
-                                              DropdownMenuItem(value: 'todos', child: Text('Todos')),
-                                              DropdownMenuItem(value: 'completada', child: Text('Completada')),
-                                              DropdownMenuItem(value: 'pendiente', child: Text('Pendiente')),
-                                              DropdownMenuItem(value: 'cancelada', child: Text('Cancelada')),
-                                              DropdownMenuItem(value: 'anulada', child: Text('Anulada')),
-                                            ],
-                                            onChanged: (v) => setState(() => _estadoFiltro = v ?? 'todos'),
                                           ),
                                         ),
-                                        const SizedBox(width: 8),
+                                        const SizedBox(width: 10),
                                         OutlinedButton(
                                           onPressed: _limpiarFiltros,
                                           child: const Text('Limpiar'),
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: 12),
                                     Row(
                                       children: [
                                         Expanded(
@@ -375,14 +348,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                                         decoration: BoxDecoration(
-                                          color: _estadoColor(estado).withValues(alpha: 0.12),
+                                          color: Colors.green[100],
                                           borderRadius: BorderRadius.circular(20),
-                                          border: Border.all(color: _estadoColor(estado)),
+                                          border: Border.all(color: Colors.green),
                                         ),
                                         child: Text(
                                           estado ?? '-',
-                                          style: TextStyle(
-                                            color: _estadoColor(estado),
+                                          style: const TextStyle(
+                                            color: Colors.green,
                                             fontWeight: FontWeight.bold,
                                             fontSize: 12,
                                           ),
@@ -457,7 +430,6 @@ class _FacturaDetailDialog extends StatefulWidget {
   final int ventaId;
   final Map<String, dynamic> resumen;
   final String Function(String?) formatFecha;
-  final Color Function(String?) estadoColor;
   final double Function(dynamic) asDouble;
 
   const _FacturaDetailDialog({
@@ -465,7 +437,6 @@ class _FacturaDetailDialog extends StatefulWidget {
     required this.ventaId,
     required this.resumen,
     required this.formatFecha,
-    required this.estadoColor,
     required this.asDouble,
   });
 

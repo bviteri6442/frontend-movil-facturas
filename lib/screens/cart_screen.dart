@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import '../models/cart.dart';
 import '../models/user.dart';
+import '../models/credit_card.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 
@@ -82,13 +85,12 @@ class _CartScreenState extends State<CartScreen> {
 			return;
 		}
 
-		// Cargar saldo actual del cliente
-		double saldo = 0;
+		// Cargar información del cliente
 		int clienteId = 0;
+		bool tieneTarjeta = false;
 		try {
 			final api = ApiService();
 			final cliente = await api.getClienteByUserId(user.id);
-			saldo = (cliente['saldo'] ?? 0).toDouble();
 			clienteId = cliente['id'] ?? 0;
 		} catch (_) {}
 
@@ -100,9 +102,52 @@ class _CartScreenState extends State<CartScreen> {
 			return;
 		}
 
-		final bool saldoSuficiente = saldo >= totalIva;
+		// Verificar si el usuario tiene tarjeta guardada localmente
+		try {
+			final prefs = await SharedPreferences.getInstance();
+			final tarjetaJson = prefs.getString('tarjeta_${user.id}');
+			if (tarjetaJson != null) {
+				final decoded = jsonDecode(tarjetaJson);
+				final tarjeta = CreditCard.fromJson(decoded);
+				tieneTarjeta = tarjeta.numeroTarjeta.isNotEmpty;
+			}
+		} catch (_) {}
 
 		if (!mounted) return;
+		
+		// Mostrar el diálogo correspondiente según si tiene tarjeta
+		if (tieneTarjeta) {
+			_mostrarDialogCompra(user, clienteId, subtotal, totalIva);
+		} else {
+			_mostrarDialogSinTarjeta(user);
+		}
+	}
+
+	void _mostrarDialogSinTarjeta(User user) {
+		showDialog(
+			context: context,
+			builder: (context) => AlertDialog(
+				title: const Text('Información de pago requerida'),
+				content: const Text('Para realizar su compra ingrese información de pago.'),
+				actions: [
+					TextButton(
+						onPressed: () {
+							Navigator.of(context).pop();
+							Navigator.pushNamed(context, '/saldo', arguments: user);
+						},
+						style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+						child: const Text('Ir'),
+					),
+					TextButton(
+						onPressed: () => Navigator.of(context).pop(),
+						child: const Text('Cancelar'),
+					),
+				],
+			),
+		);
+	}
+
+	void _mostrarDialogCompra(User user, int clienteId, double subtotal, double totalIva) {
 		showDialog(
 			context: context,
 			builder: (context) => AlertDialog(
@@ -128,44 +173,21 @@ class _CartScreenState extends State<CartScreen> {
 								'Total con IVA: \$${totalIva.toStringAsFixed(2)}',
 								style: const TextStyle(fontWeight: FontWeight.bold),
 							),
-							const SizedBox(height: 12),
-							Row(
-								children: [
-									const Icon(Icons.account_balance_wallet, size: 18),
-									const SizedBox(width: 6),
-									Text(
-										'Saldo disponible: \$${saldo.toStringAsFixed(2)}',
-										style: TextStyle(
-											color: saldoSuficiente ? Colors.green[700] : Colors.red,
-											fontWeight: FontWeight.w500,
-										),
-									),
-								],
-							),
-							if (!saldoSuficiente)
-								Padding(
-									padding: const EdgeInsets.only(top: 8),
-									child: Text(
-										'Saldo insuficiente. Necesitas \$${(totalIva - saldo).toStringAsFixed(2)} más.',
-										style: const TextStyle(color: Colors.red, fontSize: 13),
-									),
-								),
 						],
 					),
 				),
 				actions: [
-					if (saldoSuficiente)
-						ElevatedButton(
-							style: ElevatedButton.styleFrom(
-								backgroundColor: AppColors.primaryDark,
-								foregroundColor: Colors.white,
-							),
-							onPressed: () async {
-								Navigator.of(context).pop();
-								await _finalizarCompra(user, clienteId);
-							},
-							child: const Text('Confirmar compra'),
+					ElevatedButton(
+						style: ElevatedButton.styleFrom(
+							backgroundColor: AppColors.primaryDark,
+							foregroundColor: Colors.white,
 						),
+						onPressed: () async {
+							Navigator.of(context).pop();
+							await _finalizarCompra(user, clienteId);
+						},
+						child: const Text('Confirmar compra'),
+					),
 					TextButton(
 						onPressed: () => Navigator.of(context).pop(),
 						child: const Text('Cerrar'),
@@ -200,6 +222,12 @@ class _CartScreenState extends State<CartScreen> {
 				ScaffoldMessenger.of(context).showSnackBar(
 					const SnackBar(content: Text('¡Compra realizada con éxito!')),
 				);
+				// Retornar true para indicar que la compra fue exitosa
+				Future.delayed(const Duration(milliseconds: 500), () {
+					if (mounted) {
+						Navigator.of(context).pop(true);
+					}
+				});
 			}
 		} catch (e) {
 			debugPrint('[COMPRA] ❌ Error: $e');

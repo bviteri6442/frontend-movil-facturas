@@ -10,7 +10,7 @@ class Product {
   final int id;
   final String nombre;
   final String descripcion;
-  final int stock;
+  int stock;
   final double precioUnitario;
   final double iva;
   final String? imagenUrl;
@@ -114,8 +114,8 @@ class _CustomDrawerState extends State<CustomDrawer> {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.account_balance_wallet, color: AppColors.primaryDark),
-            title: const Text('Agregar saldo'),
+            leading: const Icon(Icons.credit_card, color: AppColors.primaryDark),
+            title: const Text('Agregar Tarjeta'),
             onTap: () {
               Navigator.pop(context);
               Navigator.pushNamed(context, '/saldo', arguments: widget.user);
@@ -159,6 +159,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   int _currentPage = 1;
   int _totalProducts = 0;
   List<Product> _currentPageProducts = [];
+  List<Product> _productosIniciales = []; // Guardar lista completa inicial
   bool _isLoading = true;
   String? _error;
   String _searchTerm = '';
@@ -191,15 +192,51 @@ class _CatalogScreenState extends State<CatalogScreen> {
         final productos = (data['data'] as List<dynamic>?)
             ?? (data['productos'] as List<dynamic>?)
             ?? [];
-        final products = productos
-          .where((e) => (e['stock'] ?? 0) > 0)
-          .map((e) => Product.fromJson(e))
-          .toList();
-      setState(() {
-        _currentPageProducts = products;
-        _totalProducts = (data['total'] as int?) ?? products.length;
-        _isLoading = false;
-      });
+        
+        // En la primera carga (página 1, sin búsqueda), guardar los productos iniciales completos
+        if (_currentPage == 1 && _searchTerm.isEmpty && _productosIniciales.isEmpty) {
+          _productosIniciales = productos
+            .where((e) => (e['stock'] ?? 0) > 0)
+            .map((e) => Product.fromJson(e))
+            .toList();
+        }
+        
+        // Si estamos en página 1 sin búsqueda y ya tenemos guardados los iniciales,
+        // mostrar los iniciales pero actualizar su stock con los datos del API
+        if (_currentPage == 1 && _searchTerm.isEmpty && _productosIniciales.isNotEmpty) {
+          // Crear un mapa de ID -> stock actualizado del API
+          final stockActualizado = <int, int>{};
+          for (var producto in productos) {
+            final id = (producto['id'] as int?) ?? 0;
+            final stock = (producto['stock'] as int?) ?? 0;
+            stockActualizado[id] = stock;
+          }
+          
+          // Actualizar stock de los productos guardados
+          for (var producto in _productosIniciales) {
+            if (stockActualizado.containsKey(producto.id)) {
+              producto.stock = stockActualizado[producto.id]!;
+            }
+          }
+          
+          setState(() {
+            _currentPageProducts = _productosIniciales;
+            _totalProducts = _productosIniciales.length;
+            _isLoading = false;
+          });
+        } else {
+          // Para otras páginas o búsquedas, filtrar normalmente
+          final products = productos
+            .where((e) => (e['stock'] ?? 0) > 0)
+            .map((e) => Product.fromJson(e))
+            .toList();
+            
+          setState(() {
+            _currentPageProducts = products;
+            _totalProducts = (data['total'] as int?) ?? products.length;
+            _isLoading = false;
+          });
+        }
     } catch (e) {
       setState(() {
         _error = 'Error al cargar productos';
@@ -265,44 +302,32 @@ class _CatalogScreenState extends State<CatalogScreen> {
   int get _totalPages => (_totalProducts / _pageSize).ceil();
 
   Widget _buildPaginationBar() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Row(
       children: [
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _showGoToPageDialog,
-            icon: const Icon(Icons.keyboard, size: 18),
-            label: const Text('Ir a página'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primaryDark,
-              side: const BorderSide(color: AppColors.primaryDark),
-              padding: const EdgeInsets.symmetric(vertical: 10),
-            ),
+        OutlinedButton.icon(
+          onPressed: _showGoToPageDialog,
+          icon: const Icon(Icons.keyboard, size: 18),
+          label: const Text('Ir a página'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.white,
+            backgroundColor: AppColors.primaryDark,
+            side: const BorderSide(color: AppColors.primaryDark),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
           ),
         ),
-        const SizedBox(height: 4),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.chevron_left),
-              onPressed: _currentPage > 1 ? () => _goToPage(_currentPage - 1) : null,
-            ),
-            Expanded(
-              child: Text(
-                'Página $_currentPage de $_totalPages',
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.chevron_right),
-              onPressed: _currentPage < _totalPages ? () => _goToPage(_currentPage + 1) : null,
-            ),
-          ],
+        const Spacer(),
+        IconButton(
+          icon: const Icon(Icons.chevron_left),
+          onPressed: _currentPage > 1 ? () => _goToPage(_currentPage - 1) : null,
+        ),
+        Text(
+          'Página $_currentPage de $_totalPages',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        ),
+        IconButton(
+          icon: const Icon(Icons.chevron_right),
+          onPressed: _currentPage < _totalPages ? () => _goToPage(_currentPage + 1) : null,
         ),
       ],
     );
@@ -537,13 +562,17 @@ class _CatalogScreenState extends State<CatalogScreen> {
             padding: const EdgeInsets.only(right: 8),
             child: IconButton(
               tooltip: 'Ver carrito',
-              onPressed: () {
-                Navigator.of(context).push(
+              onPressed: () async {
+                final resultado = await Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (context) => CartScreen(cart: _cart),
                     settings: RouteSettings(arguments: user),
                   ),
                 );
+                // Si compra fue exitosa, actualizar stock de los productos
+                if (resultado == true && mounted) {
+                  _fetchProducts(page: _currentPage);
+                }
               },
               icon: Stack(
                 clipBehavior: Clip.none,
@@ -619,7 +648,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       ),
               ),
             const SizedBox(height: 8),
-            _buildPaginationBar(),
           ],
         ),
       ),
