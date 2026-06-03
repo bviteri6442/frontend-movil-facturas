@@ -221,7 +221,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
           
           setState(() {
             _currentPageProducts = _productosIniciales;
-            _totalProducts = _productosIniciales.length;
+            _totalProducts = (data['total'] as int?) ?? 0;
             _isLoading = false;
           });
         } else {
