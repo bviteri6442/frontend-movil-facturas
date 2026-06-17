@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter_stripe/flutter_stripe.dart' hide Card;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import '../models/user.dart';
 import '../models/credit_card.dart';
 import '../services/api_service.dart';
+import '../services/stripe_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/user_messages.dart';
+import '../widgets/stripe_test_banner.dart';
 
 class SaldoScreen extends StatefulWidget {
   final User user;
@@ -16,9 +19,6 @@ class SaldoScreen extends StatefulWidget {
 }
 
 class _SaldoScreenState extends State<SaldoScreen> {
-  final TextEditingController _numeroController = TextEditingController();
-  final TextEditingController _fechaController = TextEditingController();
-  final TextEditingController _cvvController = TextEditingController();
   final TextEditingController _titularController = TextEditingController();
 
   CreditCard? _tarjeta;
@@ -28,6 +28,9 @@ class _SaldoScreenState extends State<SaldoScreen> {
   bool _mostrarFormulario = false;
   bool _editando = false;
   String? _error;
+  bool _stripeListo = false;
+  String? _stripeError;
+  CardFieldInputDetails? _cardDetails;
 
   @override
   void initState() {
@@ -37,9 +40,6 @@ class _SaldoScreenState extends State<SaldoScreen> {
 
   @override
   void dispose() {
-    _numeroController.dispose();
-    _fechaController.dispose();
-    _cvvController.dispose();
     _titularController.dispose();
     super.dispose();
   }
@@ -83,71 +83,114 @@ class _SaldoScreenState extends State<SaldoScreen> {
   
 
   void _abrirFormulario({CreditCard? tarjeta}) {
-    _numeroController.clear();
-    _fechaController.clear();
-    _cvvController.clear();
     _titularController.clear();
+    _cardDetails = null;
 
     if (tarjeta != null) {
-      _numeroController.text = tarjeta.numeroTarjeta;
-      _fechaController.text = tarjeta.fechaVencimiento;
-      _cvvController.text = tarjeta.cvv;
       _titularController.text = tarjeta.titular ?? '';
       setState(() => _editando = true);
     } else {
       setState(() => _editando = false);
     }
 
-    setState(() => _mostrarFormulario = true);
+    setState(() {
+      _mostrarFormulario = true;
+      _stripeListo = false;
+      _stripeError = null;
+    });
+    _initStripe();
+  }
+
+  Future<void> _initStripe() async {
+    try {
+      final api = ApiService();
+      final config = await api.getPagosConfig();
+      final key = config['publishableKey'] as String? ?? '';
+      await StripeService.ensureInitialized(key);
+      if (mounted) {
+        setState(() {
+          _stripeListo = true;
+          _stripeError = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _stripeListo = false;
+          _stripeError = mensajeAmigable(e);
+        });
+      }
+    }
   }
 
   void _cerrarFormulario() {
     setState(() => _mostrarFormulario = false);
   }
 
+  Future<void> _mostrarAviso(String titulo, String mensaje, {bool esError = true}) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(titulo),
+        content: Text(mensaje),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendido'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _guardarTarjeta() async {
-    final numero = _numeroController.text.replaceAll(' ', '');
-    final fecha = _fechaController.text;
-    final cvv = _cvvController.text;
     final titular = _titularController.text;
 
-    if (numero.length != 16) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El número de tarjeta debe tener 16 dígitos.')),
+    if (!_stripeListo) {
+      await _mostrarAviso(
+        'Stripe no está listo',
+        _stripeError ?? 'Espera a que cargue el formulario seguro de pago.',
       );
       return;
     }
 
-    if (fecha.length != 5 || !fecha.contains('/')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('La fecha debe estar en formato MM/YY.')),
-      );
-      return;
-    }
-
-    if (cvv.length != 3) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El CVV debe tener 3 dígitos.')),
+    if (_cardDetails?.complete != true) {
+      await _mostrarAviso(
+        'Datos incompletos',
+        'Completa todos los campos de la tarjeta en el formulario seguro de Stripe.',
       );
       return;
     }
 
     if (_clienteId == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No se encontró tu cuenta de cliente.')),
-      );
+      await _mostrarAviso('Cuenta no encontrada', 'No se encontró tu cuenta de cliente. Contacta soporte.');
       return;
     }
 
     setState(() => _guardando = true);
     try {
+      final api = ApiService();
+      final paymentMethod = await StripeService.createCardPaymentMethod(
+        titular: titular.isEmpty ? null : titular,
+      );
+
+      final validado = await api.validarPaymentMethod(paymentMethod.id);
+
+      final card = paymentMethod.card;
+      final expMonth = card.expMonth;
+      final expYear = card.expYear;
+      final fechaFallback = (expMonth != null && expYear != null && expMonth > 0 && expYear > 0)
+          ? '${expMonth.toString().padLeft(2, '0')}/${(expYear % 100).toString().padLeft(2, '0')}'
+          : '';
       final nuevaTarjeta = CreditCard(
         id: _editando ? _tarjeta?.id : null,
         clienteId: _clienteId,
-        numeroTarjeta: numero,
-        fechaVencimiento: fecha,
-        cvv: cvv,
+        fechaVencimiento: validado['fechaVencimiento'] as String? ?? fechaFallback,
         titular: titular.isEmpty ? null : titular,
+        paymentMethodId: validado['paymentMethodId'] as String? ?? paymentMethod.id,
+        ultimos4: validado['ultimos4'] as String? ?? card.last4,
+        marca: validado['marca'] as String? ?? card.brand,
       );
 
       // Guardar tarjeta en SharedPreferences
@@ -163,20 +206,26 @@ class _SaldoScreenState extends State<SaldoScreen> {
       _cerrarFormulario();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_editando
-                ? '¡Tarjeta actualizada!'
-                : '¡Tarjeta agregada correctamente!'),
-          ),
+        await _mostrarAviso(
+          _editando ? 'Tarjeta actualizada' : 'Tarjeta agregada',
+          _editando
+              ? 'Tu tarjeta de prueba fue validada por Stripe y actualizada.'
+              : 'Tu tarjeta de prueba fue registrada con Stripe. Ya puedes finalizar compras.',
+          esError: false,
+        );
+      }
+    } on StripeException catch (e) {
+      setState(() => _guardando = false);
+      if (mounted) {
+        await _mostrarAviso(
+          'Tarjeta no válida',
+          mensajeAmigable(e.error.localizedMessage ?? e.error.message),
         );
       }
     } catch (e) {
       setState(() => _guardando = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        await _mostrarAviso('No se pudo guardar la tarjeta', mensajeAmigable(e));
       }
     }
   }
@@ -204,22 +253,21 @@ class _SaldoScreenState extends State<SaldoScreen> {
 
     if (confirmacion == true) {
       try {
-        // Eliminar tarjeta del almacenamiento local
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('tarjeta_${widget.user.id}');
 
         setState(() => _tarjeta = null);
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Tarjeta eliminada')),
+          await _mostrarAviso(
+            'Tarjeta eliminada',
+            'Se quitó la tarjeta de tu cuenta.',
+            esError: false,
           );
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error al eliminar: $e')),
-          );
+          await _mostrarAviso('No se pudo eliminar', mensajeAmigable(e));
         }
       }
     }
@@ -333,9 +381,9 @@ class _SaldoScreenState extends State<SaldoScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'VISA',
-              style: TextStyle(
+            Text(
+              (_tarjeta!.marca ?? 'VISA').toUpperCase(),
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
@@ -404,70 +452,40 @@ class _SaldoScreenState extends State<SaldoScreen> {
             _editando ? 'Editar tarjeta' : 'Agregar tarjeta',
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 24),
-          // Número de tarjeta
-          TextField(
-            controller: _numeroController,
-            keyboardType: TextInputType.number,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              _TarjetaFormatter(),
-            ],
-            maxLength: 19, // 16 dígitos + 3 espacios
-            decoration: InputDecoration(
-              labelText: 'Número de tarjeta',
-              hintText: '0000 0000 0000 0000',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              counterText: '',
-            ),
-          ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _fechaController,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    _FechaVencimientoFormatter(),
-                  ],
-                  maxLength: 5,
-                  decoration: InputDecoration(
-                    labelText: 'Vencimiento',
-                    hintText: 'MM/YY',
-                    border:
-                        OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    counterText: '',
-                  ),
-                ),
+          const StripeTestBanner(),
+          const SizedBox(height: 20),
+          if (_stripeError != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(_stripeError!, style: const TextStyle(color: Colors.red)),
+            ),
+          if (!_stripeListo)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else ...[
+            const Text(
+              'Datos de tarjeta (formulario seguro Stripe)',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.shade400),
+                borderRadius: BorderRadius.circular(8),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: TextField(
-                  controller: _cvvController,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                    LengthLimitingTextInputFormatter(3),
-                  ],
-                  decoration: InputDecoration(
-                    labelText: 'CVV',
-                    hintText: '000',
-                    border:
-                        OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  obscureText: true,
-                ),
+              child: CardField(
+                enablePostalCode: false,
+                onCardChanged: (card) => setState(() => _cardDetails = card),
               ),
-            ],
-          ),
+            ),
+          ],
           const SizedBox(height: 16),
           TextField(
             controller: _titularController,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z\s]')),
-            ],
             decoration: InputDecoration(
               labelText: 'Titular (Opcional)',
               hintText: 'Nombre en la tarjeta',
@@ -485,9 +503,9 @@ class _SaldoScreenState extends State<SaldoScreen> {
                       strokeWidth: 2,
                     ),
                   )
-                : const Icon(Icons.save),
+                : const Icon(Icons.lock),
             label: Text(_guardando
-                ? 'Guardando...'
+                ? 'Validando con Stripe...'
                 : (_editando ? 'Actualizar tarjeta' : 'Guardar tarjeta')),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
@@ -495,7 +513,7 @@ class _SaldoScreenState extends State<SaldoScreen> {
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            onPressed: _guardando ? null : _guardarTarjeta,
+            onPressed: (_guardando || !_stripeListo) ? null : _guardarTarjeta,
           ),
           const SizedBox(height: 12),
           ElevatedButton(
@@ -510,69 +528,6 @@ class _SaldoScreenState extends State<SaldoScreen> {
           ),
         ],
       ),
-    );
-  }
-}
-
-// Formateador para número de tarjeta (xxxx xxxx xxxx xxxx)
-class _TarjetaFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    if (newValue.text.isEmpty) return newValue;
-    
-    final text = newValue.text.replaceAll(' ', '');
-    if (text.length > 16) return oldValue;
-
-    final buffer = StringBuffer();
-    for (int i = 0; i < text.length; i++) {
-      if (i > 0 && i % 4 == 0) buffer.write(' ');
-      buffer.write(text[i]);
-    }
-
-    return TextEditingValue(
-      text: buffer.toString(),
-      selection: TextSelection.collapsed(offset: buffer.length),
-    );
-  }
-}
-
-// Formateador para fecha de vencimiento (MM/YY)
-class _FechaVencimientoFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    if (newValue.text.isEmpty) return newValue;
-
-    final text = newValue.text.replaceAll('/', '');
-    if (text.length > 4) return oldValue;
-
-    if (text.length >= 2) {
-      final mes = text.substring(0, 2);
-      final mesInt = int.tryParse(mes);
-      if (mesInt == null || mesInt > 12) return oldValue;
-      
-      if (text.length == 2) {
-        return TextEditingValue(
-          text: '$mes/',
-          selection: TextSelection.collapsed(offset: 3),
-        );
-      }
-
-      final year = text.substring(2);
-      return TextEditingValue(
-        text: '$mes/$year',
-        selection: TextSelection.collapsed(offset: mes.length + 1 + year.length),
-      );
-    }
-
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }

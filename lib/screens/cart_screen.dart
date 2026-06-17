@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import '../models/buy_again_result.dart';
 import '../models/cart.dart';
 import '../models/user.dart';
 import '../models/credit_card.dart';
 import '../services/api_service.dart';
+import '../services/cart_stock_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/user_messages.dart';
 
 class CartScreen extends StatefulWidget {
 	final Cart cart;
@@ -73,21 +77,140 @@ class _CartScreenState extends State<CartScreen> {
 		}
 	}
 
+	void _editQuantity(CartItem item) {
+		final ctrl = TextEditingController(text: '${item.cantidad}');
+		showDialog(
+			context: context,
+			builder: (ctx) => AlertDialog(
+				title: Text('Cantidad — ${item.nombre}'),
+				content: Column(
+					mainAxisSize: MainAxisSize.min,
+					crossAxisAlignment: CrossAxisAlignment.start,
+					children: [
+						Text('Stock disponible: ${item.stockDisponible}',
+							style: TextStyle(
+								color: item.stockDisponible < 5 ? Colors.red : Colors.green[700],
+								fontWeight: FontWeight.bold,
+							)),
+						const SizedBox(height: 12),
+						TextField(
+							controller: ctrl,
+							keyboardType: TextInputType.number,
+							inputFormatters: [
+								FilteringTextInputFormatter.digitsOnly,
+								_LengthLimitFormatter(item.stockDisponible),
+							],
+							decoration: InputDecoration(
+								labelText: 'Cantidad',
+								hintText: 'Máx ${item.stockDisponible}',
+								border: const OutlineInputBorder(),
+							),
+						),
+					],
+				),
+				actions: [
+					TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancelar')),
+					ElevatedButton(
+						style: ElevatedButton.styleFrom(
+							backgroundColor: AppColors.primaryDark,
+							foregroundColor: Colors.white,
+						),
+						onPressed: () {
+							final qty = int.tryParse(ctrl.text) ?? 0;
+							if (qty < 1 || qty > item.stockDisponible) return;
+							setState(() {
+								item.cantidad = qty;
+								widget.cart.updateQuantity(item.productoId, qty);
+							});
+							Navigator.pop(ctx);
+						},
+						child: const Text('Aplicar'),
+					),
+				],
+			),
+		);
+	}
+
+	void _mostrarErroresStock(List<StockIssue> issues) {
+		showDialog(
+			context: context,
+			builder: (ctx) => AlertDialog(
+				title: const Text('No se puede finalizar la compra'),
+				content: SingleChildScrollView(
+					child: Column(
+						mainAxisSize: MainAxisSize.min,
+						crossAxisAlignment: CrossAxisAlignment.start,
+						children: [
+							const Text(
+								'Stock insuficiente. Revisa las cantidades en tu carrito:',
+								style: TextStyle(fontSize: 13),
+							),
+							const SizedBox(height: 12),
+							...issues.map((issue) => Padding(
+								padding: const EdgeInsets.only(bottom: 10),
+								child: Container(
+									width: double.infinity,
+									padding: const EdgeInsets.all(10),
+									decoration: BoxDecoration(
+										color: const Color(0xFFFFF3F3),
+										borderRadius: BorderRadius.circular(8),
+										border: Border.all(color: const Color(0xFFE57373)),
+									),
+									child: Column(
+										crossAxisAlignment: CrossAxisAlignment.start,
+										children: [
+											Text(issue.nombre,
+												style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+											const SizedBox(height: 4),
+											Text(issue.mensajeDetallado,
+												style: const TextStyle(fontSize: 13, color: Colors.black87)),
+										],
+									),
+								),
+							)),
+						],
+					),
+				),
+				actions: [
+					TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Entendido')),
+				],
+			),
+		);
+	}
+
 	double get subtotal => widget.cart.items.fold(0, (sum, item) => sum + item.subtotal);
 	double get totalIva => widget.cart.items.fold(0, (sum, item) => sum + item.totalConIva);
+
+	void _mostrarAviso(String titulo, String mensaje) {
+		showDialog<void>(
+			context: context,
+			builder: (ctx) => AlertDialog(
+				title: Text(titulo),
+				content: Text(mensaje),
+				actions: [
+					TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Entendido')),
+				],
+			),
+		);
+	}
 
 	void _showFinishModal() async {
 		final user = ModalRoute.of(context)?.settings.arguments as User?;
 		if (user == null) {
-			ScaffoldMessenger.of(context).showSnackBar(
-				const SnackBar(content: Text('No se encontró el usuario.')),
-			);
+			_mostrarAviso('Sesión no válida', 'No se encontró el usuario. Vuelve a iniciar sesión.');
+			return;
+		}
+
+		final stockResult = await CartStockService(ApiService()).validarCarrito(widget.cart);
+		if (!mounted) return;
+		if (!stockResult.success) {
+			_mostrarErroresStock(stockResult.issues);
 			return;
 		}
 
 		// Cargar información del cliente
 		int clienteId = 0;
-		bool tieneTarjeta = false;
+		CreditCard? tarjeta;
 		try {
 			final api = ApiService();
 			final cliente = await api.getClienteByUserId(user.id);
@@ -96,8 +219,9 @@ class _CartScreenState extends State<CartScreen> {
 
 		if (clienteId == 0) {
 			if (!mounted) return;
-			ScaffoldMessenger.of(context).showSnackBar(
-				const SnackBar(content: Text('No se encontró tu cuenta de cliente.')),
+			_mostrarAviso(
+				'Cuenta no encontrada',
+				'No se encontró tu cuenta de cliente. Completa tu registro en el perfil.',
 			);
 			return;
 		}
@@ -107,17 +231,14 @@ class _CartScreenState extends State<CartScreen> {
 			final prefs = await SharedPreferences.getInstance();
 			final tarjetaJson = prefs.getString('tarjeta_${user.id}');
 			if (tarjetaJson != null) {
-				final decoded = jsonDecode(tarjetaJson);
-				final tarjeta = CreditCard.fromJson(decoded);
-				tieneTarjeta = tarjeta.numeroTarjeta.isNotEmpty;
+				tarjeta = CreditCard.fromJson(jsonDecode(tarjetaJson));
 			}
 		} catch (_) {}
 
 		if (!mounted) return;
 		
-		// Mostrar el diálogo correspondiente según si tiene tarjeta
-		if (tieneTarjeta) {
-			_mostrarDialogCompra(user, clienteId, subtotal, totalIva);
+		if (tarjeta != null && tarjeta.estaValidada) {
+			_mostrarDialogCompra(user, clienteId, subtotal, totalIva, tarjeta);
 		} else {
 			_mostrarDialogSinTarjeta(user);
 		}
@@ -147,7 +268,7 @@ class _CartScreenState extends State<CartScreen> {
 		);
 	}
 
-	void _mostrarDialogCompra(User user, int clienteId, double subtotal, double totalIva) {
+	void _mostrarDialogCompra(User user, int clienteId, double subtotal, double totalIva, CreditCard tarjeta) {
 		showDialog(
 			context: context,
 			builder: (context) => AlertDialog(
@@ -184,7 +305,7 @@ class _CartScreenState extends State<CartScreen> {
 						),
 						onPressed: () async {
 							Navigator.of(context).pop();
-							await _finalizarCompra(user, clienteId);
+							await _finalizarCompra(user, clienteId, tarjeta);
 						},
 						child: const Text('Confirmar compra'),
 					),
@@ -197,7 +318,16 @@ class _CartScreenState extends State<CartScreen> {
 		);
 	}
 
-	Future<void> _finalizarCompra(User user, int clienteId) async {
+	Future<void> _finalizarCompra(User user, int clienteId, CreditCard tarjeta) async {
+		final pmId = tarjeta.paymentMethodId;
+		if (pmId == null || pmId.isEmpty) {
+			_mostrarAviso(
+				'Tarjeta requerida',
+				'Tu tarjeta no está validada. Ve a Mi Tarjeta y regístrala con una tarjeta de prueba.',
+			);
+			return;
+		}
+
 		final detalles = widget.cart.items.map((item) => {
 			'productoId': item.productoId,
 			'cantidad': item.cantidad,
@@ -213,7 +343,12 @@ class _CartScreenState extends State<CartScreen> {
 		}).toList()}');
 		try {
 			final api = ApiService();
-			await api.saveVenta(clienteId: clienteId, detalles: detalles);
+			await api.checkoutMovil(
+				clienteId: clienteId,
+				detalles: detalles,
+				paymentMethodId: pmId,
+				montoTotal: totalIva,
+			);
 			debugPrint('[COMPRA] ✅ Venta guardada exitosamente.');
 			setState(() {
 				widget.cart.clear();
@@ -232,9 +367,7 @@ class _CartScreenState extends State<CartScreen> {
 		} catch (e) {
 			debugPrint('[COMPRA] ❌ Error: $e');
 			if (mounted) {
-				ScaffoldMessenger.of(context).showSnackBar(
-					SnackBar(content: Text('Error al guardar la venta: $e')),
-				);
+				_mostrarAviso('No se pudo completar la compra', mensajeAmigable(e));
 			}
 		}
 	}
@@ -285,6 +418,17 @@ class _CartScreenState extends State<CartScreen> {
 																		Text(item.nombre, style: const TextStyle(fontWeight: FontWeight.bold)),
 																		const SizedBox(height: 8),
 																		Text('Cantidad: ${item.cantidad}'),
+																		InkWell(
+																			onTap: () => _editQuantity(item),
+																			child: Text(
+																				'Editar cantidad',
+																				style: TextStyle(
+																					color: AppColors.primary,
+																					fontSize: 12,
+																					decoration: TextDecoration.underline,
+																				),
+																			),
+																		),
 																		Text('Subtotal: \$${item.subtotal.toStringAsFixed(2)}'),
 																		Text(
 																			'Total: \$${item.totalConIva.toStringAsFixed(2)}',
@@ -363,5 +507,19 @@ class _CartScreenState extends State<CartScreen> {
 				],
 			),
 		);
+	}
+}
+
+class _LengthLimitFormatter extends TextInputFormatter {
+	final int max;
+	_LengthLimitFormatter(this.max);
+
+	@override
+	TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+		if (newValue.text.isEmpty) return newValue;
+		final n = int.tryParse(newValue.text);
+		if (n == null) return oldValue;
+		if (n > max) return oldValue;
+		return newValue;
 	}
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/register_validation.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -24,6 +25,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool isLoading = false;
 
+  static const _errorStyle = TextStyle(color: Color(0xFFDC2626), fontSize: 12);
+  static const _fieldDecoration = InputDecoration(
+    border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(10)),
+      borderSide: BorderSide(color: Color(0xFFD9E6D5)),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(10)),
+      borderSide: BorderSide(color: AppColors.primaryDark, width: 1.5),
+    ),
+    errorBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(10)),
+      borderSide: BorderSide(color: Color(0xFFDC2626)),
+    ),
+    focusedErrorBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(10)),
+      borderSide: BorderSide(color: Color(0xFFDC2626), width: 1.5),
+    ),
+    contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+    errorStyle: _errorStyle,
+  );
+
   @override
   void dispose() {
     nombreUsuarioController.dispose();
@@ -37,11 +61,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  void _normalizeFields() {
+    nombreUsuarioController.text = RegisterValidation.normalizeNombreUsuario(nombreUsuarioController.text);
+    nombreController.text = RegisterValidation.normalizeNombre(nombreController.text);
+    apellidoController.text = RegisterValidation.normalizeApellido(apellidoController.text);
+    emailController.text = RegisterValidation.normalizeEmail(emailController.text);
+    passwordController.text = RegisterValidation.normalizePassword(passwordController.text);
+    documentoController.text = RegisterValidation.normalizeDocumento(documentoController.text);
+    direccionController.text = RegisterValidation.normalizeDireccion(direccionController.text);
+    telefonoController.text = RegisterValidation.normalizeTelefono(telefonoController.text);
+  }
+
   void _register() async {
+    _normalizeFields();
     if (!_formKey.currentState!.validate()) {
-      // Mostrar error general en un Snackbar
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('Por favor, corrige los errores en el formulario.'),
           backgroundColor: Colors.red,
         ),
@@ -52,14 +87,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
     final api = ApiService();
     final result = await api.registerUserAndClient(
-      nombreUsuario: nombreUsuarioController.text.trim(),
-      nombre: nombreController.text.trim(),
-      apellido: apellidoController.text.trim(),
-      email: emailController.text.trim(),
+      nombreUsuario: nombreUsuarioController.text,
+      nombre: nombreController.text,
+      apellido: apellidoController.text,
+      email: emailController.text,
       password: passwordController.text,
-      documento: documentoController.text.trim(),
-      direccion: direccionController.text.trim(),
-      telefono: telefonoController.text.trim(),
+      documento: documentoController.text,
+      direccion: direccionController.text,
+      telefono: telefonoController.text,
     );
 
     setState(() => isLoading = false);
@@ -84,27 +119,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
-  // Validador de cédula ecuatoriana (Dart)
-  bool validarCedulaEcuatoriana(String cedula) {
-    final cedulaLimpia = cedula.replaceAll('-', '').replaceAll(' ', '');
-    if (!RegExp(r'^\d{10}$').hasMatch(cedulaLimpia)) return false;
-    if (RegExp(r'^(\d)\1{9}$').hasMatch(cedulaLimpia)) return false;
-    final provincia = int.tryParse(cedulaLimpia.substring(0, 2));
-    if (provincia == null || provincia < 1 || provincia > 24) return false;
-    final tercerDigito = int.tryParse(cedulaLimpia[2]);
-    if (tercerDigito == null || tercerDigito < 0 || tercerDigito > 9) return false;
-    final factores = [2, 1, 2, 1, 2, 1, 2, 1, 2];
-    int suma = 0;
-    for (int i = 0; i < 9; i++) {
-      int digito = int.parse(cedulaLimpia[i]);
-      int producto = digito * factores[i];
-      if (producto >= 10) producto -= 9;
-      suma += producto;
-    }
-    final residuo = suma % 10;
-    final digitoVerificadorEsperado = residuo == 0 ? 0 : 10 - residuo;
-    final digitoVerificadorRecibido = int.parse(cedulaLimpia[9]);
-    return digitoVerificadorEsperado == digitoVerificadorRecibido;
+  Widget _buildField({
+    required TextEditingController controller,
+    required String label,
+    TextInputType? keyboardType,
+    bool obscureText = false,
+    List<TextInputFormatter>? inputFormatters,
+    String? Function(String?)? validator,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: TextFormField(
+        controller: controller,
+        decoration: _fieldDecoration.copyWith(labelText: label),
+        keyboardType: keyboardType,
+        obscureText: obscureText,
+        inputFormatters: inputFormatters,
+        validator: validator,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+      ),
+    );
   }
 
   @override
@@ -116,128 +150,99 @@ class _RegisterScreenState extends State<RegisterScreen> {
         foregroundColor: Colors.white,
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
         child: Form(
           key: _formKey,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
           child: ListView(
             children: [
-              TextFormField(
+              _buildField(
                 controller: nombreUsuarioController,
-                decoration: InputDecoration(labelText: 'Nombre de usuario'),
+                label: 'Nombre de usuario',
                 inputFormatters: [
-                  FilteringTextInputFormatter.deny(RegExp(r'\s')), // Bloquea espacios
+                  FilteringTextInputFormatter.deny(RegExp(r'\s')),
                   LengthLimitingTextInputFormatter(20),
                 ],
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Ingrese su nombre de usuario';
-                  if (value.contains(' ')) return 'No se permiten espacios';
-                  if (value.length < 4) return 'Mínimo 4 caracteres';
-                  return null;
-                },
+                validator: RegisterValidation.validateNombreUsuario,
               ),
-              TextFormField(
+              _buildField(
                 controller: nombreController,
-                decoration: InputDecoration(labelText: 'Nombre'),
+                label: 'Nombre',
                 inputFormatters: [
                   FilteringTextInputFormatter.deny(RegExp(r'\s')),
                   FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZáéíóúÁÉÍÓÚñÑ]')),
                   LengthLimitingTextInputFormatter(20),
                 ],
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Ingrese su nombre';
-                  if (value.contains(' ')) return 'No se permiten espacios';
-                  if (value.length < 2) return 'Mínimo 2 letras';
-                  return null;
-                },
+                validator: RegisterValidation.validateNombre,
               ),
-              TextFormField(
+              _buildField(
                 controller: apellidoController,
-                decoration: InputDecoration(labelText: 'Apellido'),
+                label: 'Apellido',
                 inputFormatters: [
                   FilteringTextInputFormatter.deny(RegExp(r'\s')),
                   FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZáéíóúÁÉÍÓÚñÑ]')),
                   LengthLimitingTextInputFormatter(20),
                 ],
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Ingrese su apellido';
-                  if (value.contains(' ')) return 'No se permiten espacios';
-                  if (value.length < 2) return 'Mínimo 2 letras';
-                  return null;
-                },
+                validator: RegisterValidation.validateApellido,
               ),
-              TextFormField(
+              _buildField(
                 controller: emailController,
-                decoration: InputDecoration(labelText: 'Email'),
+                label: 'Email',
                 keyboardType: TextInputType.emailAddress,
                 inputFormatters: [
-                  FilteringTextInputFormatter.deny(RegExp(r'\s')), // Bloquea espacios
+                  FilteringTextInputFormatter.deny(RegExp(r'\s')),
                   LengthLimitingTextInputFormatter(50),
                 ],
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Ingrese su email';
-                  if (value.contains(' ')) return 'No se permiten espacios';
-                  if (!RegExp(r'^[\w\.-]+@[\w\.-]+\.\w{2,4}$').hasMatch(value)) return 'Email inválido';
-                  return null;
-                },
+                validator: RegisterValidation.validateEmail,
               ),
-              TextFormField(
+              _buildField(
                 controller: passwordController,
-                decoration: InputDecoration(labelText: 'Contraseña'),
+                label: 'Contraseña',
                 obscureText: true,
                 inputFormatters: [
-                  FilteringTextInputFormatter.deny(RegExp(r'\s')), // Bloquea espacios
+                  FilteringTextInputFormatter.deny(RegExp(r'\s')),
                   LengthLimitingTextInputFormatter(20),
                 ],
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Ingrese su contraseña';
-                  if (value.contains(' ')) return 'No se permiten espacios';
-                  if (value.length < 6) return 'Mínimo 6 caracteres';
-                  return null;
-                },
+                validator: RegisterValidation.validatePassword,
               ),
-              TextFormField(
+              _buildField(
                 controller: documentoController,
-                decoration: InputDecoration(labelText: 'Documento (Cédula)'),
+                label: 'Documento (Cédula)',
                 keyboardType: TextInputType.number,
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
                   LengthLimitingTextInputFormatter(10),
                 ],
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Ingrese su cédula';
-                  if (value.length != 10) return 'La cédula debe tener 10 dígitos';
-                  if (!validarCedulaEcuatoriana(value)) return 'Cédula ecuatoriana inválida';
-                  return null;
-                },
+                validator: RegisterValidation.validateDocumento,
               ),
-              TextFormField(
+              _buildField(
                 controller: direccionController,
-                decoration: InputDecoration(labelText: 'Dirección'),
+                label: 'Dirección',
                 inputFormatters: [
                   LengthLimitingTextInputFormatter(100),
                 ],
-                validator: (value) => value == null || value.isEmpty ? 'Ingrese su dirección' : null,
+                validator: RegisterValidation.validateDireccion,
               ),
-              TextFormField(
+              _buildField(
                 controller: telefonoController,
-                decoration: InputDecoration(labelText: 'Teléfono'),
+                label: 'Teléfono',
                 keyboardType: TextInputType.number,
                 inputFormatters: [
                   FilteringTextInputFormatter.digitsOnly,
                   LengthLimitingTextInputFormatter(10),
                 ],
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Ingrese su teléfono';
-                  if (value.length != 10) return 'El teléfono debe tener 10 dígitos';
-                  return null;
-                },
+                validator: RegisterValidation.validateTelefono,
               ),
-              SizedBox(height: 20),
+              const SizedBox(height: 8),
               isLoading
-                  ? Center(child: CircularProgressIndicator())
+                  ? const Center(child: CircularProgressIndicator())
                   : ElevatedButton(
                       onPressed: _register,
-                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
                       child: const Text('Registrarse'),
                     ),
             ],

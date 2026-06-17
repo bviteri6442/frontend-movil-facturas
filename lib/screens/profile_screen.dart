@@ -77,10 +77,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadProfile() async {
     setState(() { _isLoading = true; _error = null; });
     try {
-      final usuario = await _api.getUsuarioById(widget.user.id);
+      final usuario = await _api.getMiPerfil();
       final cliente = await _api.getClienteByUserId(widget.user.id);
       setState(() {
-        _clienteId          = cliente['id'] ?? 0;
+        _clienteId          = (cliente['id'] as num?)?.toInt() ?? 0;
         _nombreUsuarioCtrl.text = usuario['nombreUsuario'] ?? '';
         _nombreCtrl.text    = (cliente['nombre'] ?? usuario['nombre'] ?? '').toString();
         _apellidoCtrl.text  = (cliente['apellido'] ?? usuario['apellido'] ?? '').toString();

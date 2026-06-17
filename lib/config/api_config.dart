@@ -1,25 +1,36 @@
-/// URL base del API en desarrollo.
+import 'package:flutter/foundation.dart';
+
+/// URL base del API PuntoVenta (backend Python / Django).
 ///
-/// Windows / Web / iOS simulador:
-///   http://localhost:56398/api  (HTTP, sin certificado)
+/// Backend local: http://127.0.0.1:56402/
+/// API REST:      http://127.0.0.1:56402/api
 ///
-/// Emulador Android:
-///   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:56398/api
-///
-/// Dispositivo físico (misma red que la PC):
-///   flutter run --dart-define=API_BASE_URL=http://TU_IP_LAN:56398/api
+/// Override en ejecución:
+///   flutter run --dart-define=API_BASE_URL=http://TU_IP:56402/api
 class ApiConfig {
-  /// URL base de la API (con /api).
-  ///
-  /// Ejemplos:
-  /// - local: http://localhost:56398/api
-  /// - ngrok: https://xxxx.ngrok-free.app/api
-  /// - railway: https://tu-api.up.railway.app/api
-  static const String baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    // Producción Railway (override local: --dart-define=API_BASE_URL=http://localhost:56398/api)
-    defaultValue: 'https://backend-facturas-production-a3ab.up.railway.app/api',
-  );
+  /// Backend local (Windows, Web, iOS, Linux, macOS en la misma PC).
+  static const String _localHttps = 'http://127.0.0.1:56402/api';
+
+  /// Emulador Android: `localhost` apunta al emulador, no a la PC.
+  static const String _androidEmulatorHttps = 'http://10.0.2.2:56402/api';
+
+  /// URL base de la API (debe terminar en `/api`).
+  static String get baseUrl {
+    const fromEnv = String.fromEnvironment('API_BASE_URL');
+    if (fromEnv.isNotEmpty) return fromEnv;
+
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return _androidEmulatorHttps;
+    }
+    return _localHttps;
+  }
+
+  /// Swagger / schema del backend (solo referencia / depuración).
+  static String get swaggerUrl {
+    const fromEnv = String.fromEnvironment('SWAGGER_URL');
+    if (fromEnv.isNotEmpty) return fromEnv;
+    return 'http://127.0.0.1:56402/api/schema/swagger-ui/';
+  }
 
   /// Activa encabezado para evitar página intermedia de ngrok.
   static const bool skipNgrokWarning = bool.fromEnvironment(

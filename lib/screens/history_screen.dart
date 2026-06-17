@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import '../models/user.dart';
+import '../models/buy_again_result.dart';
 import '../services/api_service.dart';
+import '../services/buy_again_service.dart';
+import '../state/cart_holder.dart';
 import '../theme/app_theme.dart';
+import 'cart_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
   final User user;
@@ -156,8 +160,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ventaId: ventaId,
           resumen: ventaResumen,
           formatFecha: _formatFecha,
-
           asDouble: _asDouble,
+          user: widget.user,
         );
       },
     );
@@ -213,7 +217,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           Icon(Icons.receipt_long, size: 64, color: Colors.black26),
                           SizedBox(height: 16),
                           Text(
-                            'Aún no tienes compras registradas.',
+                            'Aun no tienes compras registradas.',
                             style: TextStyle(fontSize: 16, color: Colors.black54),
                           ),
                         ],
@@ -431,6 +435,7 @@ class _FacturaDetailDialog extends StatefulWidget {
   final Map<String, dynamic> resumen;
   final String Function(String?) formatFecha;
   final double Function(dynamic) asDouble;
+  final User user;
 
   const _FacturaDetailDialog({
     required this.api,
@@ -438,6 +443,7 @@ class _FacturaDetailDialog extends StatefulWidget {
     required this.resumen,
     required this.formatFecha,
     required this.asDouble,
+    required this.user,
   });
 
   @override
@@ -448,10 +454,13 @@ class _FacturaDetailDialogState extends State<_FacturaDetailDialog> {
   Map<String, dynamic>? _detalle;
   String? _error;
   bool _loading = true;
+  bool _copiando = false;
+  late final BuyAgainService _buyAgainService;
 
   @override
   void initState() {
     super.initState();
+    _buyAgainService = BuyAgainService(widget.api);
     _load();
   }
 
@@ -498,6 +507,114 @@ class _FacturaDetailDialogState extends State<_FacturaDetailDialog> {
               value,
               style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _comprarNuevamente() async {
+    if (_lineas.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Esta factura no tiene productos para copiar.')),
+      );
+      return;
+    }
+
+    setState(() => _copiando = true);
+    try {
+      final result = await _buyAgainService.copiarAlCarrito(
+        lineas: _lineas,
+        cart: CartHolder.instance.cart,
+      );
+      if (!mounted) return;
+
+      if (result.success) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Compra copiada al carrito (${CartHolder.instance.cart.items.length} productos).',
+            ),
+            action: SnackBarAction(
+              label: 'Ver carrito',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => CartScreen(cart: CartHolder.instance.cart),
+                    settings: RouteSettings(arguments: widget.user),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+      } else {
+        _mostrarErroresStock(result.issues);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error al copiar la compra: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _copiando = false);
+    }
+  }
+
+  void _mostrarErroresStock(List<StockIssue> issues) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('No se pudo copiar la compra'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Stock insuficiente. No se agregó ningún producto al carrito:',
+                style: TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              ...issues.map((issue) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3F3),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE57373)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          issue.nombre,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          issue.mensajeDetallado,
+                          style: const TextStyle(fontSize: 13, color: Colors.black87),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Entendido'),
           ),
         ],
       ),
@@ -704,17 +821,35 @@ class _FacturaDetailDialogState extends State<_FacturaDetailDialog> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryDark,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: (_loading || _copiando || _lineas.isEmpty)
+                          ? null
+                          : _comprarNuevamente,
+                      child: _copiando
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Comprar nuevamente'),
+                    ),
                   ),
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cerrar'),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryDark,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cerrar'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

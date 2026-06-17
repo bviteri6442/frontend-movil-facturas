@@ -4,6 +4,7 @@ import 'package:proyecto_north/screens/cart_screen.dart';
 import '../services/api_service.dart';
 import '../models/user.dart';
 import '../models/cart.dart';
+import '../state/cart_holder.dart';
 import '../theme/app_theme.dart';
 
 class Product {
@@ -27,12 +28,12 @@ class Product {
 
   factory Product.fromJson(Map<String, dynamic> json) {
     return Product(
-      id: json['id'] ?? 0,
+      id: (json['id'] as num?)?.toInt() ?? 0,
       nombre: json['nombre'] ?? '',
       descripcion: json['descripcion'] ?? '',
-      stock: json['stock'] ?? 0,
-      precioUnitario: (json['precio'] ?? 0).toDouble(),
-      iva: ((json['porcentajeIVA'] ?? 0) / 100).toDouble(),
+      stock: (json['stock'] as num?)?.toInt() ?? 0,
+      precioUnitario: (json['precio'] as num?)?.toDouble() ?? 0,
+      iva: ((json['porcentajeIVA'] as num?)?.toDouble() ?? 0) / 100,
       imagenUrl: json['imagenUrl'] as String?,
     );
   }
@@ -41,10 +42,27 @@ class Product {
   double get totalConIva => total * (1 + iva);
 }
 
+enum CatalogSortMode { recientes, alfabetico }
+
+bool isProductoVisibleEnCatalogo(Map<String, dynamic> json) {
+  final stock = (json['stock'] as num?)?.toInt() ?? 0;
+  final activo = json['activo'] ?? true;
+  return activo == true && stock > 0;
+}
+
+DateTime fechaOrdenProducto(Map<String, dynamic> json) {
+  final actualizacion = DateTime.tryParse('${json['fechaActualizacion'] ?? ''}');
+  final creacion = DateTime.tryParse('${json['fechaCreacion'] ?? ''}');
+  if (actualizacion != null && creacion != null) {
+    return actualizacion.isAfter(creacion) ? actualizacion : creacion;
+  }
+  return actualizacion ?? creacion ?? DateTime.fromMillisecondsSinceEpoch(0);
+}
+
 class CustomDrawer extends StatefulWidget {
   final String userName;
   final String userEmail;
-  final dynamic user;
+  final User user;
 
   const CustomDrawer({
     Key? key,
@@ -67,14 +85,33 @@ class _CustomDrawerState extends State<CustomDrawer> {
   }
 
   Future<void> _loadAvatar() async {
+    if (widget.user.imagenUrl != null && widget.user.imagenUrl!.isNotEmpty) {
+      setState(() { _imagenUrl = widget.user.imagenUrl; });
+    }
     try {
       final api = ApiService();
-      final usuario = await api.getUsuarioById(widget.user.id as int);
-      final url = usuario['imagenUrl'] as String?;
+      final local = await api.getAvatarUrl(widget.user.id);
+      if (mounted && local != null && local.isNotEmpty) {
+        setState(() { _imagenUrl = local; });
+      }
+      final perfil = await api.getMiPerfil();
+      final url = perfil['imagenUrl'] as String?;
       if (mounted && url != null && url.isNotEmpty) {
         setState(() { _imagenUrl = url; });
       }
-    } catch (_) {}
+    } catch (_) {
+      try {
+        final api = ApiService();
+        final usuario = await api.getUsuarioById(
+          widget.user.id,
+          fallbackUser: widget.user,
+        );
+        final url = usuario['imagenUrl'] as String?;
+        if (mounted && url != null && url.isNotEmpty) {
+          setState(() { _imagenUrl = url; });
+        }
+      } catch (_) {}
+    }
   }
 
   @override
@@ -153,90 +190,87 @@ class CatalogScreen extends StatefulWidget {
 }
 
 class _CatalogScreenState extends State<CatalogScreen> {
-  final Cart _cart = Cart();
+  Cart get _cart => CartHolder.instance.cart;
   final TextEditingController _searchController = TextEditingController();
   final int _pageSize = 30;
   int _currentPage = 1;
   int _totalProducts = 0;
   List<Product> _currentPageProducts = [];
-  List<Product> _productosIniciales = []; // Guardar lista completa inicial
   bool _isLoading = true;
   String? _error;
   String _searchTerm = '';
+  CatalogSortMode _sortMode = CatalogSortMode.recientes;
+  int _ocultosPorStock = 0;
 
   @override
   void initState() {
     super.initState();
-    _fetchProducts();
+    _fetchProducts(page: 1, forceRefresh: true);
     _searchController.addListener(() {
       final query = _searchController.text.trim();
       if (query != _searchTerm) {
-        // Solo buscar si cambia el término
         _searchProducts(query);
       }
     });
   }
 
-  Future<void> _fetchProducts({int? page, String? search}) async {
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<Product> _mapVisibleProducts(List<Map<String, dynamic>> raw) {
+    var ocultos = 0;
+    final visible = raw.where((e) {
+      final ok = isProductoVisibleEnCatalogo(e);
+      if (!ok) ocultos++;
+      return ok;
+    }).toList();
+    _ocultosPorStock = ocultos;
+
+    if (_sortMode == CatalogSortMode.recientes || _searchTerm.isNotEmpty) {
+      visible.sort((a, b) => fechaOrdenProducto(b).compareTo(fechaOrdenProducto(a)));
+    }
+
+    return visible.map((e) => Product.fromJson(e)).toList();
+  }
+
+  Future<void> _fetchProducts({int? page, String? search, bool forceRefresh = false}) async {
+    final targetPage = page ?? _currentPage;
+    final term = search ?? _searchTerm;
+
     setState(() {
       _isLoading = true;
       _error = null;
     });
+
     try {
       final api = ApiService();
+      final sortParam = _sortMode == CatalogSortMode.recientes ? 'recientes' : 'nombre';
+
       final data = await api.getProductosPaginados(
-        page: page ?? _currentPage,
+        page: targetPage,
         limit: _pageSize,
-        search: search ?? _searchTerm,
+        search: term.isEmpty ? null : term,
+        sort: sortParam,
+        soloCatalogo: true,
       );
-        final productos = (data['data'] as List<dynamic>?)
-            ?? (data['productos'] as List<dynamic>?)
-            ?? [];
-        
-        // En la primera carga (página 1, sin búsqueda), guardar los productos iniciales completos
-        if (_currentPage == 1 && _searchTerm.isEmpty && _productosIniciales.isEmpty) {
-          _productosIniciales = productos
-            .where((e) => (e['stock'] ?? 0) > 0)
-            .map((e) => Product.fromJson(e))
-            .toList();
-        }
-        
-        // Si estamos en página 1 sin búsqueda y ya tenemos guardados los iniciales,
-        // mostrar los iniciales pero actualizar su stock con los datos del API
-        if (_currentPage == 1 && _searchTerm.isEmpty && _productosIniciales.isNotEmpty) {
-          // Crear un mapa de ID -> stock actualizado del API
-          final stockActualizado = <int, int>{};
-          for (var producto in productos) {
-            final id = (producto['id'] as int?) ?? 0;
-            final stock = (producto['stock'] as int?) ?? 0;
-            stockActualizado[id] = stock;
-          }
-          
-          // Actualizar stock de los productos guardados
-          for (var producto in _productosIniciales) {
-            if (stockActualizado.containsKey(producto.id)) {
-              producto.stock = stockActualizado[producto.id]!;
-            }
-          }
-          
-          setState(() {
-            _currentPageProducts = _productosIniciales;
-            _totalProducts = (data['total'] as int?) ?? 0;
-            _isLoading = false;
-          });
-        } else {
-          // Para otras páginas o búsquedas, filtrar normalmente
-          final products = productos
-            .where((e) => (e['stock'] ?? 0) > 0)
-            .map((e) => Product.fromJson(e))
-            .toList();
-            
-          setState(() {
-            _currentPageProducts = products;
-            _totalProducts = (data['total'] as int?) ?? products.length;
-            _isLoading = false;
-          });
-        }
+      final productos = (data['data'] as List<dynamic>?)
+              ?? (data['productos'] as List<dynamic>?)
+              ?? [];
+      final raw = productos
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+      final products = _mapVisibleProducts(raw);
+
+      setState(() {
+        _currentPage = targetPage;
+        _currentPageProducts = products;
+        _totalProducts = (data['total'] as num?)?.toInt() ?? products.length;
+        _isLoading = false;
+      });
     } catch (e) {
       setState(() {
         _error = 'Error al cargar productos';
@@ -245,12 +279,26 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
   }
 
+  Future<void> _refreshCatalog() async {
+    setState(() => _currentPage = 1);
+    await _fetchProducts(page: 1, search: _searchTerm, forceRefresh: true);
+  }
+
+  void _changeSortMode(CatalogSortMode mode) {
+    if (_sortMode == mode) return;
+    setState(() {
+      _sortMode = mode;
+      _currentPage = 1;
+    });
+    _fetchProducts(page: 1, forceRefresh: true);
+  }
+
   void _searchProducts(String query) {
     setState(() {
       _searchTerm = query;
       _currentPage = 1;
     });
-    _fetchProducts(page: 1, search: query);
+    _fetchProducts(page: 1, search: query, forceRefresh: true);
   }
 
   void _goToPage(int page) {
@@ -299,7 +347,34 @@ class _CatalogScreenState extends State<CatalogScreen> {
     }
   }
 
-  int get _totalPages => (_totalProducts / _pageSize).ceil();
+  int get _totalPages {
+    if (_totalProducts <= 0) return 1;
+    return (_totalProducts / _pageSize).ceil();
+  }
+
+  Widget _buildSortBar() {
+    return Row(
+      children: [
+        const Text('Orden:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        const SizedBox(width: 8),
+        ChoiceChip(
+          label: const Text('Más recientes'),
+          selected: _sortMode == CatalogSortMode.recientes,
+          onSelected: _isLoading
+              ? null
+              : (_) => _changeSortMode(CatalogSortMode.recientes),
+        ),
+        const SizedBox(width: 6),
+        ChoiceChip(
+          label: const Text('A-Z'),
+          selected: _sortMode == CatalogSortMode.alfabetico,
+          onSelected: _isLoading
+              ? null
+              : (_) => _changeSortMode(CatalogSortMode.alfabetico),
+        ),
+      ],
+    );
+  }
 
   Widget _buildPaginationBar() {
     return Row(
@@ -553,11 +628,16 @@ class _CatalogScreenState extends State<CatalogScreen> {
     final user = widget.user;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Catálogo de Productos'),
+        title: const Text('Catalogo de Productos'),
         backgroundColor: AppColors.primaryDark,
         foregroundColor: Colors.white,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          IconButton(
+            tooltip: 'Actualizar catalogo',
+            icon: const Icon(Icons.refresh),
+            onPressed: _isLoading ? null : _refreshCatalog,
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: IconButton(
@@ -571,7 +651,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 );
                 // Si compra fue exitosa, actualizar stock de los productos
                 if (resultado == true && mounted) {
-                  _fetchProducts(page: _currentPage);
+                  _refreshCatalog();
                 }
               },
               icon: Stack(
@@ -617,7 +697,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Buscar productos por nombre o descripción',
+                hintText: 'Buscar por nombre, descripción o código',
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               ),
@@ -626,26 +706,62 @@ class _CatalogScreenState extends State<CatalogScreen> {
               },
             ),
             const SizedBox(height: 12),
+            _buildSortBar(),
+            if (_ocultosPorStock > 0 && !_isLoading)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '$_ocultosPorStock producto(s) oculto(s) en esta vista (sin stock o inactivos).',
+                  style: TextStyle(fontSize: 12, color: Colors.orange[800]),
+                ),
+              ),
+            const SizedBox(height: 12),
             _buildPaginationBar(),
             const SizedBox(height: 12),
             if (_isLoading)
-              const Expanded(child: Center(child: CircularProgressIndicator())),
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(),
+                      if (_sortMode == CatalogSortMode.recientes && _searchTerm.isEmpty) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          'Sincronizando catálogo...',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
             if (_error != null)
               Expanded(child: Center(child: Text(_error!))),
             if (!_isLoading && _error == null)
               Expanded(
-                child: _currentPageProducts.isEmpty
-                    ? const Center(child: Text('No se encontraron productos.'))
-                    : ListView.builder(
-                        itemCount: _currentPageProducts.length,
-                        itemBuilder: (context, index) {
-                          final product = _currentPageProducts[index];
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 6.0),
-                            child: _buildProductCard(product),
-                          );
-                        },
-                      ),
+                child: RefreshIndicator(
+                  onRefresh: () => _refreshCatalog(),
+                  child: _currentPageProducts.isEmpty
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: const [
+                            SizedBox(height: 120),
+                            Center(child: Text('No se encontraron productos.')),
+                          ],
+                        )
+                      : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          itemCount: _currentPageProducts.length,
+                          itemBuilder: (context, index) {
+                            final product = _currentPageProducts[index];
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 6.0),
+                              child: _buildProductCard(product),
+                            );
+                          },
+                        ),
+                ),
               ),
             const SizedBox(height: 8),
           ],

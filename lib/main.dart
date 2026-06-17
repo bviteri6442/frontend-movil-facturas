@@ -1,4 +1,9 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_stripe_web/flutter_stripe_web.dart';
+import 'config/dev_http_overrides.dart';
 import 'screens/login_screen.dart';
 import 'screens/catalog_screen.dart';
 import 'screens/saldo_screen.dart';
@@ -9,6 +14,13 @@ import 'screens/history_screen.dart';
 import 'theme/app_theme.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  if (kIsWeb) {
+    StripePlatform.instance = WebStripe.instance;
+  }
+  if (!kIsWeb && kDebugMode) {
+    HttpOverrides.global = DevHttpOverrides();
+  }
   runApp(const MyApp());
 }
 

@@ -4,7 +4,7 @@ class CartItem {
   final String descripcion;
   final double precioUnitario;
   final double iva;
-  final int stockDisponible;
+  int stockDisponible;
   final String? imagenUrl;
   int cantidad;
 
